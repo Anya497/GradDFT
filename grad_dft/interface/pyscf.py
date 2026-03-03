@@ -115,9 +115,8 @@ def molecule_from_pyscf(
     if hasattr(mf, "kpts"):
         if not np.array_equal(mf.kpts, np.array([[0.0, 0.0, 0.0]])):
              raise RuntimeError("Input was periodic with BZ sampling beyond gamma-point only. Use solid_from_pyscf instead.")
-    # mf, grids = _maybe_run_kernel(mf, grids)
     grid = grid_from_pyscf(mf.grids, dtype=dtype)
-
+    outputs = _package_outputs(mf, mf.grids, scf_iteration, grad_order)
     (
         ao,
         grad_ao,
@@ -133,8 +132,7 @@ def molecule_from_pyscf(
         s1e,
         fock,
         rep_tensor,
-        kpt_info,
-    ) = to_device_arrays(*_package_outputs(mf, mf.grids, scf_iteration, grad_order), dtype=dtype)
+    ) = to_device_arrays(*list(outputs)[:-1], dtype=dtype)
 
     atom_index, nuclear_pos = to_device_arrays(
         [elements.ELEMENTS.index(e) for e in mf.mol.elements],
