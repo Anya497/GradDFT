@@ -5,6 +5,7 @@ from grad_dft.molecule import kinetic_density
 import jax.numpy as jnp
 import jax
 from jax.lax import Precision
+import numpy as np
 
 
 @partial(jax.jit, static_argnames="precision")
@@ -16,7 +17,7 @@ def kinetic_density_old(
     return 0.5 * jnp.einsum(
         "...ab,raj,rbj->r...", rdm1, grad_ao, grad_ao, precision=precision
     )
-    
+
 
 @pytest.mark.parametrize("spin", [1, 2])
 @pytest.mark.parametrize("orbitals", [10, 25])
@@ -36,7 +37,7 @@ def test_kinetic_density_equivalence(spin, orbitals, grid, precision):
     result_old = kinetic_density_old(rdm1, grad_ao, precision)
     result_new = kinetic_density(rdm1, grad_ao, precision)
 
-    jnp.testing.assert_allclose(
+    np.testing.assert_allclose(
         result_old, result_new,
         rtol=1e-6, atol=1e-6,
         err_msg=f"Results differ for spin={spin}, orbitals={orbitals}, "
