@@ -498,8 +498,8 @@ def kinetic_density(
     Array
         The kinetic energy density. Shape: (n_spin, n_grid_points)
     """
-
-    return 0.5 * jnp.einsum("...ab,raj,rbj->r...", rdm1, grad_ao, grad_ao, precision=precision)
+    temp = jnp.einsum("sab,raj->srbj", rdm1, grad_ao, precision=precision)
+    return 0.5 * jnp.einsum("srbj,rbj->rs", temp, grad_ao, precision=precision)
 
 @jaxtyped
 @typechecked
