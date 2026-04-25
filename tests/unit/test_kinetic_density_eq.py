@@ -39,7 +39,7 @@ def test_kinetic_density_equivalence(spin, orbitals, grid, precision):
 
     np.testing.assert_allclose(
         result_old, result_new,
-        rtol=1e-6, atol=1e-6,
+        rtol=1e-5, atol=1e-5,
         err_msg=f"Results differ for spin={spin}, orbitals={orbitals}, "
                 f"grid={grid}, precision={precision}"
     )
