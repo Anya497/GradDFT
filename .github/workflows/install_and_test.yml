@@ -32,6 +32,7 @@ jobs:
           pip install -e ".[examples]"
       - name: Run unit tests
         run: |
+            pytest -v tests/unit/test_kinetic_density_eq.py
             pytest -v tests/unit/test_eigenproblem.py
             pytest -v tests/unit/test_loss.py
       - name: Run integration tests
