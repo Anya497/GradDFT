@@ -31,9 +31,9 @@ def test_kinetic_density_equivalence(spin, orbitals, grid, precision):
     rng = jax.random.PRNGKey(0)
     key1, key2 = jax.random.split(rng)
 
-    rdm1_real = jax.random.normal(key1, (spin, orbitals, orbitals))
+    rdm1_real = jax.random.randint(key1, (spin, orbitals, orbitals), minval=-80, maxval=80).astype(jnp.float64)
     rdm1 = 0.5 * (rdm1_real + rdm1_real.transpose(0, 2, 1))
-    grad_ao = jax.random.normal(key2, (grid, orbitals, 3))
+    grad_ao = jax.random.randint(key2, (grid, orbitals, 3), minval=-80, maxval=80).astype(jnp.float64)
     result_old = kinetic_density_old(rdm1, grad_ao, precision)
     result_new = kinetic_density(rdm1, grad_ao, precision)
 
