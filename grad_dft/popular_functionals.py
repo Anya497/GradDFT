@@ -38,7 +38,7 @@ def lsda_x_e(rho: Float[Array, "grid spin"], clip_cte) -> Float[Array, "grid"]:
     -------
     Float[Array, "grid"]
     """
-    rho = jnp.clip(rho, a_min=clip_cte)
+    rho = jnp.clip(rho, clip_cte)
     lda_es = (
         -3.0
         / 4.0
@@ -69,14 +69,14 @@ def b88_x_e(rho: Float[Array, "grid spin"], grad_rho: Float[Array, "grid spin di
 
     beta = 0.0042
 
-    rho = jnp.clip(rho, a_min=clip_cte)
+    rho = jnp.clip(rho, clip_cte)
 
     # LDA preprocessing data: Note that we duplicate the density to sum and divide in the last eq.
-    log_rho = jnp.log2(jnp.clip(rho, a_min=clip_cte))
+    log_rho = jnp.log2(jnp.clip(rho, clip_cte))
 
     grad_rho_norm_sq = jnp.sum(grad_rho**2, axis=-1)
 
-    log_grad_rho_norm = jnp.log2(jnp.clip(grad_rho_norm_sq, a_min=clip_cte)) / 2
+    log_grad_rho_norm = jnp.log2(jnp.clip(grad_rho_norm_sq, clip_cte)) / 2
 
     # GGA preprocessing data
     log_x_sigma = log_grad_rho_norm - 4 / 3.0 * log_rho
@@ -124,7 +124,7 @@ def pw92_c_e(rho: Float[Array, "grid spin"], clip_cte: float = 1e-30) -> Float[A
     beta3 = jnp.array([[1.6382, 3.3662]])
     beta4 = jnp.array([[0.49294, 0.62517]])
 
-    log_rho = jnp.log2(jnp.clip(rho.sum(axis=1, keepdims=True), a_min=clip_cte))
+    log_rho = jnp.log2(jnp.clip(rho.sum(axis=1, keepdims=True), clip_cte))
     log_rs = jnp.log2((3 / (4 * jnp.pi)) ** (1 / 3)) - log_rho / 3.0
     brs_1_2 = 2 ** (log_rs / 2 + jnp.log2(beta1))
     ars = 2 ** (log_rs + jnp.log2(alpha1))
@@ -161,7 +161,7 @@ def vwn_c_e(rho: Float[Array, "grid spin"], clip_cte: float = 1e-30) -> Float[Ar
     x0 = jnp.array([[-0.10498, -0.325]])
 
     rho = jnp.where(rho > clip_cte, rho, 0.0)
-    log_rho = jnp.log2(jnp.clip(rho.sum(axis=1, keepdims=True), a_min=clip_cte))
+    log_rho = jnp.log2(jnp.clip(rho.sum(axis=1, keepdims=True), clip_cte))
     # assert not jnp.isnan(log_rho).any() and not jnp.isinf(log_rho).any()
     log_rs = jnp.log2((3 / (4 * jnp.pi)) ** (1 / 3)) - log_rho / 3.0
     log_x = log_rs / 2
@@ -232,7 +232,7 @@ def lyp_c_e(rho: Float[Array, "grid spin"], grad_rho: Float[Array, "grid spin 3"
     d = 0.349
     CF = (3 / 10) * (3 * jnp.pi**2) ** (2 / 3)
 
-    rho = jnp.clip(rho, a_min=clip_cte)
+    rho = jnp.clip(rho, clip_cte)
 
     grad_rho_norm_sq = jnp.sum(grad_rho**2, axis=-1)
 
@@ -325,8 +325,7 @@ def b3lyp_exhf_densities(molecule: Molecule, clip_cte: float = 1e-30, *_, **__) 
 
     return jnp.stack((lda_e, b88_e, vwn_e, lyp_e), axis=1)
 
-@jaxtyped
-@typechecked
+@jaxtyped(typechecker=typechecked)
 def b3lyp_combine(features: Float[Array, "grid densities"], ehf: Float[Array, "omega spin grid"]) -> Float[Array, "grid densities+1"]:
     r"""
     Auxiliary function to combine the non Hartree-Fock features of B3LYP functional

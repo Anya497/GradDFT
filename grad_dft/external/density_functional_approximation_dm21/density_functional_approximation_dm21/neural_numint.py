@@ -216,7 +216,7 @@ class NeuralNumInt(numint.NumInt):
             library.
         """
 
-        self._functional = hub.Module(spec=self._model_path)
+        self._functional = hub.KerasLayer(self._model_path, signature_outputs_as_dict=True)
 
         grid_coords = tf.placeholder(tf.float32, shape=[batch_dim, 3], name="grid_coords")
         grid_weights = tf.placeholder(tf.float32, shape=[batch_dim], name="grid_weights")
@@ -260,7 +260,7 @@ class NeuralNumInt(numint.NumInt):
         }
         tensor_dict = {f"tensor_dict${k}": v for k, v in features.items()}
 
-        predictions = self._functional(tensor_dict, as_dict=True)
+        predictions = self._functional(tensor_dict)
         local_xc = predictions["grid_contribution"]
         weighted_local_xc = local_xc * grid_weights
         unweighted_xc = tf.reduce_sum(local_xc, axis=0)
@@ -311,19 +311,6 @@ class NeuralNumInt(numint.NumInt):
             grid_weights=grid_weights,
         )
 
-        outputs = {
-            "vxc": self._vxc,
-            "vrho": tf.stack(self._vrho),
-            "vsigma": tf.stack(self._vsigma),
-            "vtau": tf.stack(self._vtau),
-            "vhf": tf.stack(self._vhf),
-        }
-        # Create the signature for TF-Hub, including both the energy and functional
-        # derivatives.
-        # This is a no-op if _build_graph is called outside of
-        # hub.create_module_spec.
-        hub.add_signature(inputs=attr.asdict(self._placeholders), outputs=outputs)
-
     def export_functional_and_derivatives(
         self,
         export_path: str,
@@ -351,7 +338,7 @@ class NeuralNumInt(numint.NumInt):
             spec = hub.create_module_spec(
                 self._build_graph, tags_and_args=[(set(), {"batch_dim": batch_dim})]
             )
-            functional_and_derivatives = hub.Module(spec=spec)
+            functional_and_derivatives = hub.KerasLayer(spec, signature_outputs_as_dict=True)
             with tf.Session() as session:
                 session.run(tf.global_variables_initializer())
                 functional_and_derivatives.export(export_path, session)

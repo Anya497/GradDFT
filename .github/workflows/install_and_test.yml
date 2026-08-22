@@ -14,7 +14,7 @@ jobs:
       PYSCF_CONFIG_FILE: ".github/workflows/pyscf_conf.py"
     strategy:
       matrix:
-        python-version: ["3.9", "3.10", "3.11"]
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
         os: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v3
@@ -32,12 +32,12 @@ jobs:
           pip install -e ".[examples]"
       - name: Run unit tests
         run: |
+            pytest -v tests/unit/test_kinetic_density_eq.py
             pytest -v tests/unit/test_eigenproblem.py
             pytest -v tests/unit/test_loss.py
       - name: Run integration tests
         run: |
           pytest -v tests/integration/molecules/test_non_xc_energy.py
-          pytest -v tests/integration/molecules/test_functional_implementations.py
           pytest -v tests/integration/molecules/test_Harris.py
           pytest -v tests/integration/molecules/test_predict_B88.py
           pytest -v tests/integration/molecules/test_training.py

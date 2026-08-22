@@ -266,9 +266,8 @@ class Solid:
         return orbital_grad(self.mo_coeff, self.mo_occ, self.fock, *args, **kwargs)
     
 
-@jaxtyped
-@typechecked
 @partial(jit, static_argnames=["precision"])
+@jaxtyped(typechecker=typechecked)
 def one_body_energy(
     rdm1: Complex[Array, "n_kpt n_orbitals n_orbitals"],
     h1e: Complex[Array, "n_kpt n_orbitals n_orbitals"],
@@ -296,9 +295,8 @@ def one_body_energy(
     h1e_energy = jnp.einsum("k,kij,kji->", weights, rdm1, h1e, precision=precision)
     return h1e_energy.real
 
-@jaxtyped
-@typechecked
 @partial(jit, static_argnames=["precision"])
+@jaxtyped(typechecker=typechecked)
 def coulomb_potential(
     rdm1: Complex[Array, "n_kpt n_orbitals n_orbitals"],
     rep_tensor: Complex[Array, "n_kpt n_kpt n_orbitals n_orbitals n_orbitals n_orbitals"],
@@ -327,9 +325,8 @@ def coulomb_potential(
     return v_k
     
 
-@jaxtyped
-@typechecked
 @partial(jit, static_argnames=["precision"])
+@jaxtyped(typechecker=typechecked)
 def coulomb_energy(
     rdm1: Complex[Array, "n_kpt n_orbitals n_orbitals"],
     rep_tensor: Complex[Array, "n_kpt n_kpt n_orbitals n_orbitals n_orbitals n_orbitals"],
@@ -361,9 +358,8 @@ def coulomb_energy(
     coulomb_energy = jnp.einsum("k,kij,kji->", weights, rdm1, v_k)/2.0
     return coulomb_energy.real
 
-@jaxtyped
-@typechecked
 @partial(jit, static_argnames=["precision"])
+@jaxtyped(typechecker=typechecked)
 def non_xc(
     rdm1: Complex[Array, "n_kpt n_orbitals n_orbitals"],
     h1e: Complex[Array, "n_kpt n_orbitals n_orbitals"],
@@ -407,9 +403,8 @@ def non_xc(
     return nuclear_repulsion + kinetic_and_external + coulomb
 
 
-@jaxtyped
-@typechecked
 @partial(jit, static_argnames=["precision"])
+@jaxtyped(typechecker=typechecked)
 def make_rdm1(
     mo_coeff: Complex[Array, "n_spin n_kpt n_orbitals n_orbitals"],
     mo_occ: Float[Array, "n_spin n_kpt n_orbitals"],
@@ -433,8 +428,7 @@ def make_rdm1(
     return jnp.einsum("skij,skj,sklj -> skil", mo_coeff, mo_occ, mo_coeff.conj(), precision=precision)
 
 
-@jaxtyped
-@typechecked
+@jaxtyped(typechecker=typechecked)
 def get_occ(
     mo_energies: Float[Array, "n_spin n_kpt n_orbitals"],
     nelecs: Int[Array, "spin"],
@@ -485,9 +479,8 @@ the whole 1BZ need to be considered which would involve use of rotation matrices
 1BZ. 
 """
 
-@jaxtyped
-@typechecked
 @partial(jit, static_argnames="precision")
+@jaxtyped(typechecker=typechecked)
 def density(rdm1: Complex[Array, "n_spin n_kpt n_orbitals n_orbitals"], 
             ao: Complex[Array, "n_kpt n_flat_grid n_orbitals"], 
             weights: Float[Array, "n_kpts_or_n_ir_kpts"],
@@ -517,9 +510,8 @@ def density(rdm1: Complex[Array, "n_spin n_kpt n_orbitals n_orbitals"],
     den = jnp.einsum("k,skab,kra,krb->rs", weights, rdm1, ao, ao, precision=precision).real
     return den
 
-@jaxtyped
-@typechecked
 @partial(jit, static_argnames="precision")
+@jaxtyped(typechecker=typechecked)
 def grad_density(
     rdm1: Complex[Array, "n_spin n_kpt n_orbitals n_orbitals"], 
     ao: Complex[Array, "n_kpt n_flat_grid n_orbitals"], 
@@ -554,9 +546,8 @@ def grad_density(
 
     return 2 * jnp.einsum("k,...kab,kra,krbj->r...j", weights, rdm1, ao, grad_ao, precision=precision).real
 
-@jaxtyped
-@typechecked
 @partial(jit, static_argnames="precision")
+@jaxtyped(typechecker=typechecked)
 def lapl_density(
     rdm1: Complex[Array, "n_spin n_kpt n_orbitals n_orbitals"], 
     ao: Complex[Array, "n_kpt n_flat_grid n_orbitals"], 
@@ -594,9 +585,8 @@ def lapl_density(
         "k,...kab,kraj,krbj->r...", weights, rdm1, grad_ao, grad_ao, precision=precision
     ) + 2 * jnp.einsum("k,...kab,kra,krbi->r...", weights, rdm1, ao, grad_2_ao, precision=precision)).real
 
-@jaxtyped
-@typechecked
 @partial(jit, static_argnames="precision")
+@jaxtyped(typechecker=typechecked)
 def kinetic_density(
     rdm1 : Complex[Array, "n_spin n_kpt n_orbitals n_orbitals"],
     grad_ao: Complex[Array, "n_kpt n_flat_grid n_orbitals 3"],
@@ -628,9 +618,8 @@ def kinetic_density(
 
     return 0.5 * jnp.einsum("k,...kab,kraj,krbj->r...", weights, rdm1, grad_ao, grad_ao, precision=precision).real
 
-@jaxtyped
-@typechecked
 @partial(jit, static_argnames="precision")
+@jaxtyped(typechecker=typechecked)
 def orbital_grad(
         mo_coeff: Complex[Array, "n_spin n_kpt n_orbitals n_orbitals"],
         mo_occ: Float[Array, "n_spin n_kpt n_orbitals"],
