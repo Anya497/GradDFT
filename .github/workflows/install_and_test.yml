@@ -1,6 +1,7 @@
 name: Installing Grad-DFT and running tests
 
 on:
+  push:
   pull_request:
     types:
       - synchronize
