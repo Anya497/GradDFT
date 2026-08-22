@@ -10,3 +10,4 @@ typing_extensions>=4.8.0
 jaxtyping
 pytest>=7.4.3
 chex>=0.1.90
+setuptools<82
