@@ -2,3 +2,5 @@
 data/training/dissociation/
 runs/
 */__pycache__/
+.vscode/
+*.egg-info/
