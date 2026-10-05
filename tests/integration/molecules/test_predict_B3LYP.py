@@ -19,7 +19,8 @@
 import pytest
 
 # This only works on startup!
-from jax.config import config
+from jax import config
+
 config.update("jax_enable_x64", True)
 
 from grad_dft import molecule_from_pyscf, scf_loop
@@ -56,6 +57,7 @@ MOL_LI.build()
 # This test is now NOT included in the CI because of implementation differences between B3LYP in Grad DFT
 # versus PySCF. See above.
 
+
 @pytest.mark.parametrize("mol_and_name", [(MOL_WATER, "water"), (MOL_LI, "Li")])
 def test_predict(mol_and_name: tuple[gto.Mole, str]) -> None:
     r"""Compare the total energy predicted by Grad-DFT for the B3LYP functional versus PySCF.
@@ -79,4 +81,6 @@ def test_predict(mol_and_name: tuple[gto.Mole, str]) -> None:
     molecule_out = iterator(PARAMS, molecule)
     e_XND = molecule_out.energy
     kcalmoldiff = (e_XND - e_DM) * Hartree2kcalmol
-    assert jnp.allclose(kcalmoldiff, 0, atol=10), f"Energy difference with PySCF for B3LYP on {name} exceeds the threshold."
+    assert jnp.allclose(
+        kcalmoldiff, 0, atol=10
+    ), f"Energy difference with PySCF for B3LYP on {name} exceeds the threshold."
