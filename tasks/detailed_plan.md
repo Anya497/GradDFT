@@ -95,12 +95,13 @@ because it is broken independently of JAX (see the issue).
 - [x] S2: Write tests (`pytest --collect-only tests/`: 4 errors / 69 tests ->
       **0 errors / 127 tests**)
 - [x] S2: Update documentation (no user-facing change needed, justified above)
-- [x] S2: Pre-Commit Check (pylint 197 -> 186 messages on the 7 touched modules,
-      11 `E1123 unexpected-keyword-arg 'a_min'` errors eliminated and no genuinely
-      new message; `black` deliberately **not** applied here — see Design Notes)
+- [x] S2: Pre-Commit Check (pylint, measured against this subtask's parent:
+      197 -> 186 messages and **20 errors -> 9**, all 11 removed being the
+      `E1123 unexpected-keyword-arg 'a_min'` ones, with no genuinely new message;
+      `black` deliberately **not** applied here — see Design Notes)
 - [x] S2: Quality checks (existing conventions reused; no tolerance or assertion
       touched)
-- [ ] S2: Commit
+- [x] S2: Commit
 - [x] S2: Quality gate — **9 of 10 CI files green**; `test_dm21` blocked, see
       "DM21 is blocked by two independent upstream breaks" below
 
@@ -120,12 +121,12 @@ because it is broken independently of JAX (see the issue).
   release supporting 3.9 is 0.4.30, so a floor above 0.4.30 would make the 3.9 job
   uninstallable.
 
-- [ ] S3: Implement
-- [ ] S3: Write tests (n/a — dependency bound)
-- [ ] S3: Update documentation (n/a)
-- [ ] S3: Pre-Commit Check
-- [ ] S3: Quality checks
-- [ ] S3: Commit
+- [x] S3: Implement (`jax>=0.4.27`, `jaxlib>=0.4.27`)
+- [x] S3: Write tests (n/a — dependency bound; evidence in Design Notes)
+- [x] S3: Update documentation (n/a — `README.md` states no JAX version)
+- [x] S3: Pre-Commit Check (no Python file touched)
+- [x] S3: Quality checks (no other pin changed; 0.4.27 keeps the CI 3.9 job installable)
+- [x] S3: Commit
 
 ## Design Notes (discovered during implementation)
 
