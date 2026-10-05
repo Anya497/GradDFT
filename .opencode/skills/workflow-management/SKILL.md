@@ -1,6 +1,6 @@
 ---
 name: workflow-management
-description: Load first at the start of every session, before doing anything else. Drives the overall working loop for a task or set of tasks on an integration branch (main or a personal branch): global plan, one task at a time, feature branch, detailed plan, subtask execution, code review, quality gate, integration, final pull request.
+description: Load first at the start of every session, before doing anything else. Drives the overall working loop for a task or set of tasks on the integration branch (a personal, stacked branch): global plan, one task at a time, feature branch, detailed plan, subtask execution, code review, quality gate, integration, final pull request.
 ---
 
 # Workflow Management
@@ -26,25 +26,31 @@ step.
   mirror is updated after each task integrates, exactly as the detailed plan is
   mirrored to a task issue (see the `subtask-loop` skill).
 - Resolve the **integration branch** once per session:
-  `INTEGRATION=$(git config --get graddft.integrationBranch || echo main)`.
-  It is `main` in direct mode and a personal, long-lived branch in stacked
-  mode. Never commit directly to the integration branch.
+
+  ```bash
+  INTEGRATION=$(git config --get graddft.integrationBranch || echo agent_settings)
+  ```
+
+  This snippet is the single source of truth for the integration branch;
+  other skills reuse it verbatim. This repository works in **stacked mode**:
+  the integration branch is a long-lived personal branch (`agent_settings` by
+  default) sitting on top of `main`. Never commit directly to it.
 - Do tasks strictly **one at a time**. Each task gets its own feature branch
   (created from the integration branch), its own detailed plan, and its own
   integration step. Never combine multiple tasks in a single feature branch.
-- In direct mode a task is integrated into `main` through its own pull
-  request. In stacked mode a task is rebased and fast-forward merged into the
-  integration branch and **no pull request is opened**; a single pull request
-  into `main` is opened only on the user's explicit request.
+- A task is integrated into the integration branch by rebase and fast-forward
+  merge, preserving the per-subtask commits. **No pull request is opened**; the
+  single pull request into `main` is opened only on the user's explicit request
+  (see "Finalize to main").
 - Each decision must be documented before implementation. Documentation must
   be detailed enough to reproduce the project from scratch and understand why
   each decision was made.
 - Commit messages must be detailed enough to understand the reasons for
-  changes.
+  changes (see the commit format in the `subtask-loop` skill).
 - Documentation-only tasks (no `.py` files changed) skip code-specific gates
-  (tests, lint, format) but still run the docs build — for documentation
-  changes it is the relevant gate — and follow all other workflow rules:
-  one task per branch, one commit per subtask, code review.
+  (tests, `black`, `pylint`) because the pre-commit hooks only match Python
+  files. All other workflow rules still apply: one task per branch, one commit
+  per subtask, code review.
 
 ## Working Loop
 
@@ -70,17 +76,16 @@ step.
       `<!-- global-plan -->` (a pure mirror of the file). A related task added
       later is attached to the same hub and added to the plan.
 1. Ensure user-defined tasks, the global plan, and project architecture are
-   aligned.
+   aligned. Start from `README.md` and the module layout under `grad_dft/`.
 2. Choose exactly ONE open `task`-labeled issue that is not yet done: a task
    is done when its subtask commits are on the integration branch
    (`git log "$INTEGRATION" --format=%s | grep -cE '\(<N>-S[0-9]+\):'` > 0,
    where N is the issue number). List candidates with
    `gh issue list --label task --state open`. Hubs carry `hub`, not `task`, so
    this list never returns them.
-3. Rebase the integration branch onto `origin/main` (task-boundary refresh, see
-   `git-workflow`), then create a feature branch from the integration branch for
-   this single task (branching model: the "Contribution guidelines" section of
-   `docs/developer.rst`; procedure: `git-workflow`).
+3. Rebase the integration branch onto `origin/main` (task-boundary refresh),
+   then create the feature branch for this single task from it:
+   `git checkout -b <task-slug> "$INTEGRATION"`.
 4. Generate a detailed plan in `tasks/detailed_plan.md`, decomposing the task
    into atomic subtasks (see `planning`), then post it as a comment on the
    task issue; the first line of the comment is the marker
@@ -89,7 +94,7 @@ step.
 5a. Verify all subtasks are complete and unblocked. Check
     `tasks/detailed_plan.md`:
     - If any subtask is marked `[blocked]` or `[deferred]`, STOP immediately.
-      The task is NOT complete. Do NOT proceed to code review or the PR.
+      The task is NOT complete. Do NOT proceed to code review or the merge.
       Report blocking subtasks to the user and await guidance.
     - If a subtask was attempted, not committed, and its work reverted, the
       subtask is NOT complete. Do not silently skip it.
@@ -107,38 +112,33 @@ step.
 7. Load the `quality-gates` skill and run the gate. It must show PASS. If
    BLOCKED, do not assess whether failures are pre-existing or unrelated to
    your changes; fix every failure and re-run until PASS.
-8. Integrate the task (see `git-workflow`):
-   - **Direct mode** (`$INTEGRATION` is `main`): push the feature branch and
-     open a pull request into `main`, merged with rebase and merge
-     (fast-forward) so the per-subtask commits are preserved and `main` stays
-     linear. The user reviews and merges the PR manually; proceed only after
-     they confirm the merge.
-   - **Stacked mode** (`$INTEGRATION` is a personal branch): rebase and
-     fast-forward merge the feature branch into `$INTEGRATION`, then delete the
-     feature branch. Do **not** push for a PR and do **not** open a PR.
+8. Integrate the task: rebase the feature branch onto the updated integration
+   branch and fast-forward merge it, then delete the feature branch. Do **not**
+   push for a PR and do **not** open a PR. Advance the integration branch only
+   after the user confirms the merge.
 9. For a batch, update its progress: mark the integrated task `[done #<N>]` in
    `tasks/global_plan.md`, then mirror the file to the hub's global-plan
    comment using the same procedure as the detailed plan (step 7 of the
    `subtask-loop` skill), substituting the hub number for the task number and
    the `<!-- global-plan -->` marker for `<!-- detailed-plan -->`.
 10. Verify the last subtask's commit carries `Closes #<N>` (the task's own
-    issue) as a standalone line — the issue closes when the commit reaches
-    `main`. For the last task of a batch, the same commit also carries
-    `Closes #<hub>` once every sub-issue is resolved, closing the hub when the
-    commit reaches `main`. See the Task Completeness Verification in the
-    `subtask-loop` skill (the single source of truth for what "done" means).
-11. Return to step 2 for the next task. In stacked mode, keep accumulating
-    completed tasks on `$INTEGRATION`; open the request to `main` only via the
-    finalize step below, on the user's explicit request.
+    issue) as a standalone line. For the last task of a batch, the same commit
+    also carries `Closes #<hub>` once every sub-issue is resolved. The issues
+    close when that commit reaches `main` (see the Task Completeness
+    Verification in the `subtask-loop` skill, the single source of truth for
+    what "done" means).
+11. Return to step 2 for the next task, accumulating completed tasks on
+    `$INTEGRATION`. Open the request to `main` only via the finalize step, on
+    the user's explicit request.
 
-## Finalize to main (stacked mode, explicit request only)
+## Finalize to main (explicit request only)
 
 When — and only when — the user explicitly asks to open the request to `main`:
 
-1. Rebase `$INTEGRATION` onto `origin/main` (see `git-workflow`) and re-run the
-   aggregated code review and quality gate over the whole `main...integration`
-   diff (see `code-review` and `quality-gates`).
+1. Rebase `$INTEGRATION` onto `origin/main` and re-run the aggregated code
+   review and quality gate over the whole `main...$INTEGRATION` diff (see
+   `code-review` and `quality-gates`).
 2. Push `$INTEGRATION` and open one pull request with base `main` and head
-   `$INTEGRATION` (see `git-workflow`).
+   `$INTEGRATION`.
 3. The user reviews and merges the PR with rebase and merge. After the merge,
    sync `main`; never delete the long-lived integration branch.

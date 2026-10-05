@@ -12,23 +12,27 @@ iterate until there are zero findings.
 ## Procedure
 
 1. Determine the task's changes against the integration branch
-   (`INTEGRATION=$(git config --get graddft.integrationBranch || echo main)`):
+   (`INTEGRATION=$(git config --get graddft.integrationBranch || echo agent_settings)`):
    `git diff --stat "$INTEGRATION"...HEAD` and `git diff "$INTEGRATION"...HEAD`.
 2. Review against the checklist below.
-3. For every finding, fix it in a follow-up commit on the same feature branch
-   (one commit per subtask/fix as per `git-workflow`).
+3. For every finding, fix it in a follow-up commit on the same feature branch,
+   using the commit format from the `subtask-loop` skill.
 4. Repeat until zero findings.
 
 ## Checklist
 
 - [ ] **Correctness** — every clause of the task issue (#N) is traceable to
       committed code.
-- [ ] **Tests** — new code is covered; no test was weakened or skipped; the
-      suite passes (see `run-tests`).
-- [ ] **Docs** — docs updated per the `documentation` skill; docstrings follow
-      its conventions.
-- [ ] **Duplication** — no copy-pasted or near-identical logic (see `reusing`).
-- [ ] **Style** — `code-style` pass clean; types consistent with the codebase.
+- [ ] **Tests** — new code is covered by `tests/unit/` or
+      `tests/integration/`; no test was weakened or skipped; the suite passes
+      (see `run-tests`).
+- [ ] **Docs** — the documentation surface (`README.md`, `examples/`,
+      docstrings) was updated per the mapping in the `planning` skill, and every
+      path, file name, and API name it mentions exists.
+- [ ] **Duplication** — no copy-pasted or near-identical logic; shared helpers
+      belong in `grad_dft/utils/`.
+- [ ] **Style** — `black` and `pylint` (per `.pre-commit-config.yaml`) pass
+      clean; types come from `grad_dft/utils/types.py` where applicable.
 - [ ] **Dead code** — no unused imports, functions, or debug artifacts.
 - [ ] **Scope** — changes touch only what the task requires; no unrelated edits.
 

@@ -1,43 +1,37 @@
 ---
 name: quality-gates
-description: Use before integrating a task. Defines the hard gate that must pass (tests + style + docs build) and how to interpret its result. References the CI workflows for the exact commands.
+description: Use before integrating a task. Defines the hard gate that must pass (tests + style) and how to interpret its result. References the CI workflow and the pre-commit config for the exact commands.
 ---
 
 # Quality Gates
 
 The hard gate a task must pass before integration. It has exactly two terminal
-states: **PASS** or **BLOCKED**. There is no "pass with exceptions". In stacked
-mode the same gate is also run over the whole `main...integration` diff
-immediately before the final pull request to `main`.
+states: **PASS** or **BLOCKED**. There is no "pass with exceptions". The same
+gate is run again over the whole `main...$INTEGRATION` diff immediately before
+the final pull request to `main`.
 
 ## What the gate is
 
-The gate is the combination of the test suite, the style/lint checks, and the
-docs build:
+The gate is the combination of the test suite and the style/lint checks:
 
-- **Tests** — see `.github/workflows/python_tests.yaml` for the exact command
-  and working directories (see the `run-tests` skill). 0 failures, 0 skipped.
-- **Style/lint** — see `.github/workflows/python_linting.yaml` for the exact
-  commands (`ruff check`, `ruff format --check`; see the `code-style` skill).
-- **Docs build** — see `.github/workflows/docs.yaml`. Sphinx builds under the
-  no-warnings policy (`-W --keep-going`): any warning fails the build, so the
-  exit code is sufficient.
+- **Tests** — the per-file `pytest -v` invocations in
+  `.github/workflows/install_and_test.yml` (see the `run-tests` skill). 0
+  failures, 0 skipped.
+- **Style/lint** — the hooks in `.pre-commit-config.yaml`: `black` (rev pinned
+  there) and `pylint -rn -sn --rcfile=.pylintrc`.
 
-The CI workflows are the source of truth for the commands they run; this skill
-only defines the gate semantics. There is no type-check step and no coverage
-threshold in this project.
+There is **no docs build gate** — this repository has no Sphinx site; the
+documentation surface is `README.md` plus `examples/`, checked by review, not
+by a build. There is also no type-check step and no coverage threshold.
 
 ## Procedure
 
-1. Run the tests (`poetry run pytest tests -sv`) from every component the
-   change touches (`AIAgent/`, `tools/compstrat/`, `tools/runstrat/`). 0
-   failures, 0 skipped.
-2. Run `ruff check` and `ruff format --check` (see
-   `.github/workflows/python_linting.yaml`). No errors.
-3. Build the docs (see `.github/workflows/docs.yaml`). It must exit 0
-   (no-warnings policy).
-4. Interpret the result:
-   - All clean → **PASS**. Proceed to merge (see `git-workflow`).
+1. Install the package and extras (`pip install -e .`,
+   `pip install -e ".[examples]"`), then run the tests. 0 failures, 0 skipped.
+2. Run `pre-commit run --all-files` (or `black` and `pylint -rn -sn
+   --rcfile=.pylintrc` directly). No errors.
+3. Interpret the result:
+   - All clean → **PASS**. Proceed to merge into the integration branch.
    - Any failure → **BLOCKED**.
 
 ## On BLOCKED

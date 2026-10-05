@@ -23,8 +23,9 @@ verbatim.
 Example comment:
 
 ```
-[USER GUIDANCE]: "Use CSR representation; the matrix indices must be the same
-node order as the DFA from task 2."
+[USER GUIDANCE]: "Keep the electron density in atomic units and reuse
+`grad_dft/utils/types.py` aliases; do not introduce a second dtype switch in
+`grad_dft/functional.py`."
 ```
 
 Only transfer guidance the user actually gave; do not invent or pad it.
