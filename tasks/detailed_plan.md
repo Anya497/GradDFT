@@ -232,7 +232,7 @@ semantics (delegates to `eval_xc`), the returned layout table for `spin=0`/
       `eval_xc`; no tolerance or assertion touched)
 - [x] S2: Commit
 
-### S3: Read the vendored TF1 DM21 checkpoint directly in `generate_DM21_weights`
+### S3: Read the vendored TF1 DM21 checkpoint directly in `generate_DM21_weights` [done]
 
 **Discovered while running S2's tests** — not part of the original issue
 analysis: with the `eval_xc_eff` shim in place, `mf.kernel()` completes, and
@@ -265,12 +265,16 @@ the independently implemented JAX port of DM21; the whole
   `tf.saved_model.load` can no longer import on TF >= 2.13.
 - Commit: `(#6-S3): read the vendored TF1 DM21 checkpoint directly`.
 
-- [ ] S3: Implement
-- [ ] S3: Write tests (`test_dm21` end-to-end; file stays green)
-- [ ] S3: Update documentation (no user-facing change needed, justified above)
-- [ ] S3: Pre-Commit Check (black + pylint, no new messages vs S2's parent)
-- [ ] S3: Quality checks (no duplication: reader is local to the method)
-- [ ] S3: Commit
+- [x] S3: Implement (direct checkpoint read; `vars_to_params` on `(name,
+      value)` pairs; interface unchanged)
+- [x] S3: Write tests (`test_dm21` end-to-end: 2 passed; whole file 14 passed,
+      `atol=1` untouched)
+- [x] S3: Update documentation (no user-facing change needed, justified above)
+- [x] S3: Pre-Commit Check (pylint vs S2's parent: symbol multiset identical;
+      black: no new debt — baseline `black --check` already fails, task #7)
+- [x] S3: Quality checks (no duplication: reader stays local to the method;
+      no tolerance or assertion touched)
+- [x] S3: Commit
 
 ### S4: Cover the restricted (`spin=0`) path with an RKS-vs-UKS consistency test
 
