@@ -24,6 +24,24 @@ from pyscf import dft
 from pyscf import gto
 from pyscf.dft import numint
 import tensorflow.compat.v1 as tf
+
+try:
+    import pkg_resources  # pylint: disable=unused-import
+except ModuleNotFoundError:  # setuptools >= 81 removed pkg_resources
+    # tensorflow_hub.__init__ still imports pkg_resources.parse_version to
+    # check the installed tensorflow version. Provide the one symbol it needs
+    # when pkg_resources is no longer part of the environment.
+    import sys as _sys
+    from types import SimpleNamespace as _SimpleNamespace
+
+    def _parse_version(version):
+        """Returns a comparable key for a dotted numeric version string."""
+        return tuple(int(part) for part in version.split(".") if part.isdigit())
+
+    _sys.modules.setdefault(
+        "pkg_resources", _SimpleNamespace(parse_version=_parse_version)
+    )
+
 import tensorflow_hub as hub
 
 import grad_dft.external.density_functional_approximation_dm21.density_functional_approximation_dm21.compute_hfx_density as compute_hfx_density
