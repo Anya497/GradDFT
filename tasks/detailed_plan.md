@@ -154,7 +154,7 @@ usage example is untouched.
       or assertion touched)
 - [x] S1: Commit
 
-### S2: Add the `eval_xc_eff` override that routes PySCF's derivative contract to `eval_xc`
+### S2: Add the `eval_xc_eff` override that routes PySCF's derivative contract to `eval_xc` [done]
 
 **Code:** new method `NeuralNumInt.eval_xc_eff` in
 `grad_dft/external/density_functional_approximation_dm21/density_functional_approximation_dm21/neural_numint.py`
@@ -162,8 +162,11 @@ usage example is untouched.
 ("The actual evaluation ... is performed in NeuralNumInt.eval_xc" → mention
 that PySCF reaches it through the `eval_xc_eff` override)
 **Tests:** `pytest -v tests/integration/molecules/test_functional_implementations.py`
-— `test_dm21` (both parametrized molecules) must pass with the **unchanged**
-`atol=1` tolerance, and the other 9 tests in the file must stay green; also run
+— with the shim, `test_dm21`'s PySCF leg (`mf.kernel()` on both parametrized
+molecules) completes and the other 9 tests stay green; the test as a whole
+**cannot pass until S3** because its second leg,
+`generate_DM21_weights`, hits an independent break (TF1 `tf.saved_model.load`
+on TF 2.21 — see S3). The `atol=1` tolerance is untouched. Also run
 `pytest -v tests/integration/molecules/test_predict_B88.py
 tests/integration/molecules/test_non_xc_energy.py tests/integration/molecules/test_Harris.py`
 to confirm no collateral damage.
@@ -195,8 +198,12 @@ semantics (delegates to `eval_xc`), the returned layout table for `spin=0`/
   5. Build the effective derivatives with the validated chain rule
      (outputs of `eval_xc` are `(N, ncomp)` — transpose to `(ncomp, N)` for the
      spin-polarised case):
-     - `spin == 0`: `vxc = [vrho, 2·vsigma[:,None]·rho[1:4], zeros, vtau]`
-       stacked to shape `(5, N)` (row 2 = laplacian slot, zeros as PySCF does).
+     - `spin == 0`: `vxc = np.concatenate([vrho[None, :],
+       2·vsigma[None, :]·rho[1:4], vtau[None, :]])` → shape `(5, N)`, rows
+       `[dE/dρ, dE/d∇ρ (3), dE/dτ]` — **no laplacian row** (this line
+       previously claimed a `zeros` row at index 2; re-validated against
+       `NumInt.eval_xc_eff` on `mgga_x_tpss`, max |diff| = 0.0, so the layout
+       table in Verification is the correct one).
      - `spin == 1`: shape `(2, 5, N)` with
        `vxc[:,0] = vrho.T`, `vxc[0,1:4] = 2·vsigma[:,0]·∇ρ_a + vsigma[:,1]·∇ρ_b`,
        `vxc[1,1:4] = 2·vsigma[:,2]·∇ρ_b + vsigma[:,1]·∇ρ_a`,
@@ -210,7 +217,62 @@ semantics (delegates to `eval_xc`), the returned layout table for `spin=0`/
   future reader can re-derive it.
 - Commit: `(#6-S2): add an eval_xc_eff shim routing PySCF 2.13 back to eval_xc`.
 
-### S3: Cover the restricted (`spin=0`) path with an RKS-vs-UKS consistency test
+- [x] S2: Implement (`eval_xc_eff` override + class-docstring sentence)
+- [x] S2: Write tests (chain rule vs `NumInt.eval_xc_eff` on `mgga_x_tpss`:
+      max |diff| = 0.0 for both spins; `test_dm21`'s PySCF leg — `mf.kernel()`
+      on both molecules — completes; collateral files green: 45 passed across
+      `test_predict_B88.py`, `test_non_xc_energy.py`, `test_Harris.py`; the
+      full `test_dm21` is deferred to S3, see Tests)
+- [x] S2: Update documentation (numpydoc docstring on `eval_xc_eff` with the
+      layout contract and raises; class docstring updated; no user-facing change)
+- [x] S2: Pre-Commit Check (`black` not applied to the vendored file, same
+      precedent as S1; `pylint -rn -sn --rcfile=.pylintrc` vs S1's parent: no
+      new messages)
+- [x] S2: Quality checks (no duplication: single evaluation path reused via
+      `eval_xc`; no tolerance or assertion touched)
+- [x] S2: Commit
+
+### S3: Read the vendored TF1 DM21 checkpoint directly in `generate_DM21_weights`
+
+**Discovered while running S2's tests** — not part of the original issue
+analysis: with the `eval_xc_eff` shim in place, `mf.kernel()` completes, and
+`test_dm21` moves to its second leg, `DM21().generate_DM21_weights()`
+(`grad_dft/functional.py`), which loads the same vendored checkpoint with
+`tf.saved_model.load(folder)`. On TF 2.21 the V1 SavedModel restore machinery
+removed in TF 2.x fails inside `load_v1_in_v2.restore_variables` with
+`TypeError: Binding inputs to tf.function failed due to 'too many positional
+arguments'` (the pruned restore function has an empty signature but is called
+with the variables path). The dependency floor already forces TF >= 2.13, so
+`tf.saved_model.load` on a V1 SavedModel is not a supported path.
+
+**Code:** `grad_dft/functional.py`, `generate_DM21_weights`
+**Tests:** `test_dm21` (both parametrized molecules) must now pass end-to-end
+unchanged (`atol=1`), which also validates the entire PySCF+shim leg against
+the independently implemented JAX port of DM21; the whole
+`test_functional_implementations.py` file must stay green.
+**Docs:** No user-facing change needed — `generate_DM21_weights`'s interface
+(`folder` default, return value) is unchanged.
+
+**Spec:**
+- Replace `variables = tf.saved_model.load(folder).variables` with a direct
+  checkpoint read: `tf.train.load_checkpoint(os.path.join(folder,
+  "variables", "variables"))` plus `tf.train.list_variables(...)`, appending
+  the `":0"` op suffix to each name so the existing name patterns in
+  `vars_to_params` (`"/w:"`, `"/b:"`, `"gamma:"`, `"beta:"`) still match.
+- `vars_to_params` iterates `(name, value)` pairs; `tf_tensor_to_jax` becomes
+  a plain `jnp.asarray(value)` (the checkpoint reader returns numpy arrays).
+- Comment in code: the vendored checkpoint is a TF1 SavedModel that
+  `tf.saved_model.load` can no longer import on TF >= 2.13.
+- Commit: `(#6-S3): read the vendored TF1 DM21 checkpoint directly`.
+
+- [ ] S3: Implement
+- [ ] S3: Write tests (`test_dm21` end-to-end; file stays green)
+- [ ] S3: Update documentation (no user-facing change needed, justified above)
+- [ ] S3: Pre-Commit Check (black + pylint, no new messages vs S2's parent)
+- [ ] S3: Quality checks (no duplication: reader is local to the method)
+- [ ] S3: Commit
+
+### S4: Cover the restricted (`spin=0`) path with an RKS-vs-UKS consistency test
 
 **Code:** new test `test_dm21_rks` in
 `tests/integration/molecules/test_functional_implementations.py` (after
@@ -241,18 +303,18 @@ documents individual test names).
   `eval_xc_eff` and change the test to assert that raise. The test-coverage
   route is tried first because the restricted route is the documented usage in
   the class docstring (`mf = dft.RKS(...)`).
-- Commit (last subtask): `(#6-S3): cover the DM21 restricted path with an
+- Commit (last subtask): `(#6-S4): cover the DM21 restricted path with an
   RKS-vs-UKS consistency test` plus a standalone `Closes #6` line.
 
 ## Acceptance criteria mapping
 
 | Criterion (issue #6) | Where |
 |---|---|
-| `test_dm21` passes, no tolerance change | S2 Tests (`atol=1` untouched) |
-| `spin=0` covered by a new test or explicitly rejected | S3 (test first, `NotImplementedError` fallback pre-decided) |
+| `test_dm21` passes, no tolerance change | S2 (shim) + S3 (checkpoint reader) — `atol=1` untouched |
+| `spin=0` covered by a new test or explicitly rejected | S4 (test first, `NotImplementedError` fallback pre-decided) |
 | `hub.load` port and PySCF shim in separate commits | S1 / S2 commits |
 | `export_functional_and_derivatives()` explicit outcome | S1 (`NotImplementedError` + docstring) |
 
-After S3: whole-repo code review (`code-review` skill), then the quality gate
+After S4: whole-repo code review (`code-review` skill), then the quality gate
 (`quality-gates` skill: CI-file pytest invocations + `black` + `pylint`), then
 integration into `agent_settings` after user confirmation.
