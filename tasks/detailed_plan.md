@@ -117,9 +117,11 @@ because it is broken independently of JAX (see the issue).
 - `jax` and `jaxlib` move together; they are released in lockstep and pip does
   not resolve them independently in practice.
 - Keep the change to those two lines; do not touch unrelated pins.
-- Do not raise the floor further: CI still runs Python 3.9, and the last JAX
-  release supporting 3.9 is 0.4.30, so a floor above 0.4.30 would make the 3.9 job
-  uninstallable.
+- Do not raise the floor further: 0.4.27 is the lowest release whose signature
+  accepts the call sites this code uses (see Design Notes), and a higher floor
+  would narrow support for no corresponding fix. The *upper* bound that CI's
+  Python 3.9 job imposed — last JAX supporting 3.9 being 0.4.30 — was removed
+  along with that job when CI moved to Python 3.12 only (#9).
 
 - [x] S3: Implement (`jax>=0.4.27`, `jaxlib>=0.4.27`)
 - [x] S3: Write tests (n/a — dependency bound; evidence in Design Notes)
@@ -217,9 +219,9 @@ rewrite sets a higher one. Reading `jnp.clip`'s published signature per release:
 
 Since S2 removes the last `a_min` / `a_max` call site, the declared floor must be
 a release where `min` / `max` exist: **0.4.27**. Below that, the requirements
-would advertise a JAX the code cannot run on. Above 0.4.30, CI's Python 3.9 job
-becomes uninstallable. 0.4.27 is therefore both the lowest correct bound and the
-lowest that keeps the existing CI matrix installable.
+would advertise a JAX the code cannot run on. That release declares
+`Requires-Python: >=3.9`, so it also admits the Python 3.12 floor introduced in
+#9. 0.4.27 is therefore the lowest correct bound.
 
 ### DM21 is blocked by two independent upstream breaks
 
