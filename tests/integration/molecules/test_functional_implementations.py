@@ -183,3 +183,30 @@ def test_dm21(mol):
 
     assert not jnp.isnan(fock).any()
     assert jnp.allclose(dm21diff, 0, atol=1)
+
+
+def test_dm21_rks():
+    """Restricted SCF must agree with unrestricted on the closed-shell molecule.
+
+    DM21's restricted path maps inputs to rho_a = rho_b = rho/2, and
+    get_hf_density splits a restricted density matrix into dm/2 per spin, so on
+    a closed-shell molecule the restricted and unrestricted self-consistent
+    solutions must agree; the unrestricted path (spin=1) is already validated
+    end-to-end by test_dm21. A wrong spin=0 derivative layout in eval_xc_eff
+    therefore shows up as an energy mismatch (or a diverged/NaN SCF) here, not
+    as a silent pass.
+    """
+    mol_rks = mols[0]  # closed-shell HF; the open-shell Li atom (mols[1]) is
+    # spin-polarized, so not a valid restricted Kohn-Sham molecule.
+
+    mf_uks = dft.UKS(mol_rks)
+    mf_uks._numint = NeuralNumInt(Functional.DM21)  # pylint: disable=protected-access
+    e_uks = mf_uks.kernel()
+
+    mf_rks = dft.RKS(mol_rks)
+    mf_rks._numint = NeuralNumInt(Functional.DM21)  # pylint: disable=protected-access
+    e_rks = mf_rks.kernel()
+
+    assert not jnp.isnan(e_uks)
+    assert not jnp.isnan(e_rks)
+    assert jnp.allclose((e_rks - e_uks) * Hartree2kcalmol, 0, atol=1)

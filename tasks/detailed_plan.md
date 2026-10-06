@@ -276,7 +276,7 @@ the independently implemented JAX port of DM21; the whole
       no tolerance or assertion touched)
 - [x] S3: Commit
 
-### S4: Cover the restricted (`spin=0`) path with an RKS-vs-UKS consistency test
+### S4: Cover the restricted (`spin=0`) path with an RKS-vs-UKS consistency test [done]
 
 **Code:** new test `test_dm21_rks` in
 `tests/integration/molecules/test_functional_implementations.py` (after
@@ -309,6 +309,20 @@ documents individual test names).
   the class docstring (`mf = dft.RKS(...)`).
 - Commit (last subtask): `(#6-S4): cover the DM21 restricted path with an
   RKS-vs-UKS consistency test` plus a standalone `Closes #6` line.
+
+- [x] S4: Implement (new `test_dm21_rks` after `test_dm21`, reusing `mols[0]`
+      and the existing imports; local `mol_rks` avoids shadowing the module-level
+      `mol`)
+- [x] S4: Write tests (`test_dm21_rks` passes standalone — 1 passed in 144 s;
+      whole file 15 passed in 303 s — the RKS and UKS energies agree within
+      `atol=1`, neither NaN)
+- [x] S4: Update documentation (no user-facing change needed — test-only; the
+      rationale is recorded in the test's docstring)
+- [x] S4: Pre-Commit Check (pylint vs S3's parent: symbol multiset identical;
+      black: no new debt — baseline `black --check` already fails, task #7)
+- [x] S4: Quality checks (no duplication: reuses `mols[0]`, `NeuralNumInt`,
+      `Functional.DM21`; no tolerance or assertion touched)
+- [x] S4: Commit (Closes #6)
 
 ## Acceptance criteria mapping
 
