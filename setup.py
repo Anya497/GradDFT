@@ -42,11 +42,12 @@ setup(
             "openpyxl"
         ],
     },  
+    python_requires=">=3.12",
     classifiers=[
         "Intended Audience :: Developers",
-        "Intended Audience :: Science/Research"
-        "License :: OSI Approved ::  Apache 2.0",
-        "Programming Language :: Python :: 3.9",
-        "Programming Language :: Python :: 3.10",
+        "Intended Audience :: Science/Research",
+        "License :: OSI Approved :: Apache 2.0",
+        "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3 :: Only",
     ],
 )
