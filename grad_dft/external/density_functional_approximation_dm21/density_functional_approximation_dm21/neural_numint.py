@@ -216,7 +216,11 @@ class NeuralNumInt(numint.NumInt):
             library.
         """
 
-        self._functional = hub.Module(spec=self._model_path)
+        # TF-Hub 0.16 removed the TF1 Module API (hub.Module). The checkpoints
+        # are SavedModels, so load them with hub.load; the "default" signature's
+        # keyword names keep the "tensor_dict$" prefix used below (only the
+        # TensorSpec name= fields are sanitised to "_").
+        self._functional = hub.load(self._model_path).signatures["default"]
 
         grid_coords = tf.placeholder(tf.float32, shape=[batch_dim, 3], name="grid_coords")
         grid_weights = tf.placeholder(tf.float32, shape=[batch_dim], name="grid_weights")
@@ -260,7 +264,7 @@ class NeuralNumInt(numint.NumInt):
         }
         tensor_dict = {f"tensor_dict${k}": v for k, v in features.items()}
 
-        predictions = self._functional(tensor_dict, as_dict=True)
+        predictions = self._functional(**tensor_dict)
         local_xc = predictions["grid_contribution"]
         weighted_local_xc = local_xc * grid_weights
         unweighted_xc = tf.reduce_sum(local_xc, axis=0)
@@ -311,18 +315,10 @@ class NeuralNumInt(numint.NumInt):
             grid_weights=grid_weights,
         )
 
-        outputs = {
-            "vxc": self._vxc,
-            "vrho": tf.stack(self._vrho),
-            "vsigma": tf.stack(self._vsigma),
-            "vtau": tf.stack(self._vtau),
-            "vhf": tf.stack(self._vhf),
-        }
-        # Create the signature for TF-Hub, including both the energy and functional
-        # derivatives.
-        # This is a no-op if _build_graph is called outside of
-        # hub.create_module_spec.
-        hub.add_signature(inputs=attr.asdict(self._placeholders), outputs=outputs)
+        # Note: TF-Hub 0.16 removed hub.add_signature/create_module_spec, so no
+        # signature is registered here. The derivatives (self._vrho, ...) stay
+        # graph attributes consumed by eval_xc via self._session.run; only the
+        # export path below needed them in a signature, and it now raises.
 
     def export_functional_and_derivatives(
         self,
@@ -346,15 +342,24 @@ class NeuralNumInt(numint.NumInt):
           batch_dim: the batch dimension of the grid to use in the model. Default:
             None (determine at runtime). This should only be set if the exported
             model is to be ahead-of-time compiled into a standalone library.
+
+        Raises:
+          NotImplementedError: always. TF-Hub 0.16 removed the TF1 Module API
+            (hub.create_module_spec, hub.Module.export) this method was built
+            on; exporting would require a TF2 tf.saved_model.save
+            reimplementation. Only the vendored export_saved_model.py and
+            neural_numint_test.py use this method, and neither is part of the
+            test suite.
         """
-        with tf.Graph().as_default():
-            spec = hub.create_module_spec(
-                self._build_graph, tags_and_args=[(set(), {"batch_dim": batch_dim})]
-            )
-            functional_and_derivatives = hub.Module(spec=spec)
-            with tf.Session() as session:
-                session.run(tf.global_variables_initializer())
-                functional_and_derivatives.export(export_path, session)
+        del export_path, batch_dim  # unused: always raises
+        raise NotImplementedError(
+            "export_functional_and_derivatives requires the TF1 Hub Module API "
+            "(hub.create_module_spec / hub.Module.export) that tensorflow-hub "
+            "0.16 removed, and would need a TF2 tf.saved_model.save "
+            "reimplementation instead. Only the vendored export_saved_model.py "
+            "and neural_numint_test.py use this method; neither is part of the "
+            "test suite."
+        )
 
     # DM21* functionals include the hybrid term directly, so set the
     # range-separated and hybrid parameters expected by PySCF to 0 so PySCF
