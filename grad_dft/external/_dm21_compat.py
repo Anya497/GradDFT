@@ -16,29 +16,29 @@
 
 ``density_functional_approximation_dm21`` is installed from its upstream
 repository (pinned in ``requirements.txt``). Upstream targets TF-Hub's TF1
-Module API and a pre-setuptools-81 environment, while GradDFT pins
-tensorflow-hub >= 0.16, runs on setuptools >= 81 (no ``pkg_resources``) and
-PySCF >= 2.3. This module carries exactly the three deltas that make the
-installed package run in this environment; everything else is used
-unmodified:
+Module API and a setuptools that still ships ``pkg_resources``, while this
+environment runs tensorflow-hub 0.16, setuptools 84 (no ``pkg_resources``,
+removed in setuptools 82) and PySCF 2.13. This module carries exactly the
+three deltas that make the installed package run here; everything else is
+used unmodified:
 
 1. A ``pkg_resources`` shim, required because ``tensorflow_hub.__init__``
    imports ``pkg_resources.parse_version`` at import time while setuptools
-   >= 81 no longer ships ``pkg_resources``.
+   >= 82 no longer ships ``pkg_resources``.
 2. Shims for the TF1 Module API symbols TF-Hub 0.16 removed
    (``hub.Module``, ``hub.add_signature``, ``hub.create_module_spec``), so
    upstream's ``_build_graph`` runs unmodified against the SavedModel
    checkpoints via ``hub.load``.
-3. The ``eval_xc_eff`` override PySCF >= 2.3 requires: its nr_rks/nr_uks
-   grid loops call ``eval_xc_eff``, whose base-class implementation
-   dispatches to the libxc backend (``self.libxc.eval_xc1``) instead of this
-   subclass's ``eval_xc``, and strips the laplacian row that DM21's graph
-   placeholders expect.
+3. The ``eval_xc_eff`` override required on PySCF >= 2.7: nr_rks/nr_uks
+   reach the functional through ``eval_xc_eff``, whose base-class
+   implementation dispatches to the libxc backend (``self.libxc.eval_xc1``)
+   instead of this subclass's ``eval_xc``, and strips the laplacian row that
+   DM21's graph placeholders expect.
 
-The three deltas were developed in the vendored copy under
-``grad_dft/external/density_functional_approximation_dm21/`` (tasks #6 and
-#10) and are carried over verbatim where task #13 replaced the vendored copy
-with the installed package.
+The three deltas were developed for the vendored copy of upstream that used
+to live under ``grad_dft/external/`` (tasks #6 and #10) and are carried over
+verbatim here, after task #13 replaced that copy with the installed package
+(git history has the vendored code).
 """
 
 from typing import List, Optional, Tuple, Union
@@ -47,11 +47,11 @@ import numpy as np
 
 # Delta 1: tensorflow-hub imports pkg_resources.parse_version at import time,
 # so the shim must run before tensorflow_hub is imported. try/except keeps the
-# real pkg_resources when the environment has one (setuptools < 81).
+# real pkg_resources when the environment has one (setuptools < 82).
 try:
     import pkg_resources  # pylint: disable=unused-import
 except ModuleNotFoundError:
-    # setuptools >= 81 removed pkg_resources. Provide the single symbol
+    # setuptools >= 82 removed pkg_resources. Provide the single symbol
     # tensorflow-hub needs.
     import sys as _sys
     from types import SimpleNamespace as _SimpleNamespace
@@ -129,7 +129,7 @@ _SystemState = _neural_numint._SystemState  # pylint: disable=protected-access
 class NeuralNumInt(  # pylint: disable=too-few-public-methods
     _neural_numint.NeuralNumInt
 ):
-    """DM21 numerical integration from the installed package, plus PySCF >= 2.3.
+    """DM21 numerical integration from the installed package, plus PySCF >= 2.7.
 
     PySCF's nr_rks/nr_uks grid loops reach the functional through
     ``eval_xc_eff`` (delta 3 in the module docstring), which upstream does not
