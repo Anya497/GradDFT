@@ -177,7 +177,7 @@ def test_uks():
     mol.basis = "sto-3g"
     mol.build()
 
-    mf = dft.UKS(mol, grid)
+    mf = dft.UKS(mol)
     mf.grids.level = 3
     mf.small_rho_cutoff = 1.0e-20
     mf._numint = ni
