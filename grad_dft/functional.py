@@ -591,10 +591,10 @@ def dm21_densities(
     grad_rho_norm_sq = jnp.sum(grad_rho**2, axis=-1)
 
     # LDA preprocessing data
-    log_rho = jnp.log2(jnp.clip(rho, a_min=clip_cte))
+    log_rho = jnp.log2(jnp.clip(rho, min=clip_cte))
 
     # GGA preprocessing data
-    log_grad_rho_norm = jnp.log2(jnp.clip(grad_rho_norm_sq, a_min=clip_cte)) / 2
+    log_grad_rho_norm = jnp.log2(jnp.clip(grad_rho_norm_sq, min=clip_cte)) / 2
     log_x_sigma = log_grad_rho_norm - 4 / 3.0 * log_rho
     log_u_sigma = jnp.where(
         jnp.greater(log_rho, jnp.log2(clip_cte)),
@@ -603,7 +603,7 @@ def dm21_densities(
     )
 
     # MGGA preprocessing data
-    log_tau = jnp.log2(jnp.clip(tau, a_min=clip_cte))
+    log_tau = jnp.log2(jnp.clip(tau, min=clip_cte))
     log_1t_sigma = -(
         5 / 3.0 * log_rho - log_tau + 2 / 3.0 * jnp.log2(6 * jnp.pi**2) + jnp.log2(3 / 5.0)
     )
@@ -851,45 +851,52 @@ class DM21(NeuralFunctional):
         path = os.path.dirname(os.path.dirname(__file__))
         folder = os.path.join(path, folder)
 
-        variables = tf.saved_model.load(folder).variables
+        # The vendored checkpoint is a TensorFlow 1 SavedModel, which
+        # tf.saved_model.load can no longer import on TF >= 2.13 (the V1
+        # restore machinery it relies on was removed). Read the variables
+        # directly from the checkpoint files instead; the ":0" op suffix is
+        # appended so the name patterns below match what variables used to be
+        # called by tf.saved_model.load(...).variables.
+        checkpoint_path = os.path.join(folder, "variables", "variables")
+        checkpoint = tf.train.load_checkpoint(checkpoint_path)
+        variables = [
+            (name + ":0", checkpoint.get_tensor(name))
+            for name, _ in tf.train.list_variables(checkpoint_path)
+        ]
 
-        def tf_tensor_to_jax(tf_tensor: tf.Tensor) -> Array:
-            return jnp.asarray(tf_tensor.numpy())
+        def tf_tensor_to_jax(value: jnp.ndarray) -> Array:
+            return jnp.asarray(value)
 
-        def vars_to_params(variables: List[tf.Variable]) -> PyTree:
+        def vars_to_params(variables: List[tuple]) -> PyTree:
             import re
 
             params = {}
-            for var in variables:
-                if "ResidualBlock_" in var.name:
-                    number = int(re.findall("ResidualBlock_[0-9]", var.name)[0][-1]) + 1
-                elif "ResidualBlock/" in var.name:
+            for name, value in variables:
+                if "ResidualBlock_" in name:
+                    number = int(re.findall("ResidualBlock_[0-9]", name)[0][-1]) + 1
+                elif "ResidualBlock/" in name:
                     number = 1
-                elif "Squash" in var.name:
+                elif "Squash" in name:
                     number = 0
-                elif "Output" in var.name:
+                elif "Output" in name:
                     number = 7
                 else:
-                    raise ValueError("Unknown variable name.")
+                    raise ValueError(f"Unknown variable name {name}.")
 
-                if "/linear/" in var.name:
+                if "/linear/" in name:
                     if "Dense_" + str(number) not in params.keys():
                         params["Dense_" + str(number)] = {}
-                    if "/w:" in var.name:
-                        params["Dense_" + str(number)]["kernel"] = tf_tensor_to_jax(var.value())
-                    elif "/b:" in var.name:
-                        params["Dense_" + str(number)]["bias"] = tf_tensor_to_jax(var.value())
-                elif "/layer_norm/" in var.name:
+                    if "/w:" in name:
+                        params["Dense_" + str(number)]["kernel"] = tf_tensor_to_jax(value)
+                    elif "/b:" in name:
+                        params["Dense_" + str(number)]["bias"] = tf_tensor_to_jax(value)
+                elif "/layer_norm/" in name:
                     if "LayerNorm_" + str(number - 1) not in params.keys():
                         params["LayerNorm_" + str(number - 1)] = {}
-                    if "gamma:" in var.name:
-                        params["LayerNorm_" + str(number - 1)]["scale"] = tf_tensor_to_jax(
-                            var.value()
-                        )
-                    elif "beta:" in var.name:
-                        params["LayerNorm_" + str(number - 1)]["bias"] = tf_tensor_to_jax(
-                            var.value()
-                        )
+                    if "gamma:" in name:
+                        params["LayerNorm_" + str(number - 1)]["scale"] = tf_tensor_to_jax(value)
+                    elif "beta:" in name:
+                        params["LayerNorm_" + str(number - 1)]["bias"] = tf_tensor_to_jax(value)
             return params
 
         example_features = normal(rng, shape=(2, n_input_features))
@@ -1005,7 +1012,7 @@ def correlation_polarization_correction(
         The ready to be integrated electronic energy density.
     """
 
-    log_rho = jnp.log2(jnp.clip(rho.sum(axis=1), a_min=clip_cte))
+    log_rho = jnp.log2(jnp.clip(rho.sum(axis=1), min=clip_cte))
     # assert not jnp.isnan(log_rho).any() and not jnp.isinf(log_rho).any()
     log_rs = jnp.log2((3 / (4 * jnp.pi)) ** (1 / 3)) - log_rho / 3.0
 
@@ -1033,7 +1040,7 @@ def correlation_polarization_correction(
     # assert not jnp.isnan(alphac).any() and not jnp.isinf(alphac).any()
 
     fz = fzeta(zeta) #jnp.round(fzeta(zeta), int(math.log10(clip_cte)))
-    z4 = zeta**4 #jnp.round(2 ** (4 * jnp.log2(jnp.clip(zeta, a_min=clip_cte))), int(math.log10(clip_cte)))
+    z4 = zeta**4 #jnp.round(2 ** (4 * jnp.log2(jnp.clip(zeta, min=clip_cte))), int(math.log10(clip_cte)))
 
     e_tilde = (
         e_tilde_PF[:, 0]
@@ -1105,10 +1112,10 @@ def densities(
     grad_rho_norm_sq = jnp.sum(grad_rho**2, axis=-1)
 
     # LDA preprocessing data
-    log_rho = jnp.log2(jnp.clip(rho, a_min=clip_cte))
+    log_rho = jnp.log2(jnp.clip(rho, min=clip_cte))
 
     # GGA preprocessing data
-    log_grad_rho_norm = jnp.log2(jnp.clip(grad_rho_norm_sq, a_min=clip_cte)) / 2
+    log_grad_rho_norm = jnp.log2(jnp.clip(grad_rho_norm_sq, min=clip_cte)) / 2
     log_x_sigma = log_grad_rho_norm - 4 / 3.0 * log_rho
     log_u_sigma = jnp.where(
         jnp.greater(log_rho, jnp.log2(clip_cte)),
@@ -1117,7 +1124,7 @@ def densities(
     )
 
     # MGGA preprocessing data
-    log_tau = jnp.log2(jnp.clip(tau, a_min=clip_cte))
+    log_tau = jnp.log2(jnp.clip(tau, min=clip_cte))
     log_1t_sigma = log_tau - 5 / 3.0 * log_rho
     log_w_sigma = jnp.where(
         jnp.greater(log_rho, jnp.log2(clip_cte)),
@@ -1136,8 +1143,8 @@ def densities(
     ######### Correlation features ###############
 
     grad_rho_norm_sq_ss = jnp.sum((grad_rho.sum(axis=1)) ** 2, axis=-1)
-    log_grad_rho_norm_ss = jnp.log2(jnp.clip(grad_rho_norm_sq_ss, a_min=clip_cte)) / 2
-    log_rho_ss = jnp.log2(jnp.clip(rho.sum(axis=1), a_min=clip_cte))
+    log_grad_rho_norm_ss = jnp.log2(jnp.clip(grad_rho_norm_sq_ss, min=clip_cte)) / 2
+    log_rho_ss = jnp.log2(jnp.clip(rho.sum(axis=1), min=clip_cte))
     log_x_ss = log_grad_rho_norm_ss - 4 / 3.0 * log_rho_ss
 
     log_u_ss = jnp.where(
@@ -1154,7 +1161,7 @@ def densities(
 
     log_u_c = jnp.stack((log_u_ss, log_u_ab), axis=1)
 
-    log_tau_ss = jnp.log2(jnp.clip(tau.sum(axis=1), a_min=clip_cte))
+    log_tau_ss = jnp.log2(jnp.clip(tau.sum(axis=1), min=clip_cte))
     log_1t_ss = log_tau_ss - 5 / 3.0 * log_rho_ss
     log_w_ss = jnp.where(
         jnp.greater(log_rho.sum(axis=1), jnp.log2(clip_cte)),
@@ -1177,7 +1184,7 @@ def densities(
     beta3 = jnp.array([[1.6382, 3.3662]])
     beta4 = jnp.array([[0.49294, 0.62517]])
 
-    log_rho = jnp.log2(jnp.clip(rho.sum(axis=1, keepdims=True), a_min=clip_cte))
+    log_rho = jnp.log2(jnp.clip(rho.sum(axis=1, keepdims=True), min=clip_cte))
     log_rs = jnp.log2((3 / (4 * jnp.pi)) ** (1 / 3)) - log_rho / 3.0
     brs_1_2 = 2 ** (log_rs / 2 + jnp.log2(beta1))
     ars = 2 ** (log_rs + jnp.log2(alpha1))

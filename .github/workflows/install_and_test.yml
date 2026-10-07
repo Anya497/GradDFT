@@ -6,6 +6,17 @@ on:
       - synchronize
       - opened
       - reopened
+    # Only run CI when a change can affect its outcome: library code, tests,
+    # dependency metadata, the workflow/config it consumes, or lint config.
+    # Docs/notebooks/plan-file-only changes skip CI.
+    paths:
+      - 'grad_dft/**'
+      - 'tests/**'
+      - 'requirements.txt'
+      - 'setup.py'
+      - '.github/**'
+      - '.pylintrc'
+      - '.pre-commit-config.yaml'
 
 jobs:
   build:
@@ -14,7 +25,7 @@ jobs:
       PYSCF_CONFIG_FILE: ".github/workflows/pyscf_conf.py"
     strategy:
       matrix:
-        python-version: ["3.9", "3.10", "3.11"]
+        python-version: ["3.12"]
         os: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v3

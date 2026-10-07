@@ -2,3 +2,7 @@
 data/training/dissociation/
 runs/
 */__pycache__/
+.vscode/
+*.egg-info/
+# Agent workflow plan files (single source of truth: mirrored issue comments)
+tasks/

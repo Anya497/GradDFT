@@ -146,7 +146,8 @@ def molecule_and_energies(geom: str) -> tuple[float, float]:
     """
     mf = dft.RKS(geom)
     mf.xc = "0.00*LDA"  # quick way of having no XC energy in PySCF
-    E_pyscf = mf.kernel(max_cycle=SCF_ITERS)
+    mf.max_cycle = SCF_ITERS
+    E_pyscf = mf.kernel()
     molecule = molecule_from_pyscf(mf, scf_iteration=SCF_ITERS)
     E_gdft = molecule.nonXC()
     return E_pyscf, E_gdft

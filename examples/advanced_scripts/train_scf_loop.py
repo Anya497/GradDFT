@@ -24,20 +24,22 @@ import warnings
 
 from grad_dft.interface.pyscf import molecule_from_pyscf
 from grad_dft.interface.pyscf import loader
-from grad_dft.functional import NeuralFunctional, canonicalize_inputs, dm21_coefficient_inputs, densities
+from grad_dft.functional import (
+    NeuralFunctional,
+    canonicalize_inputs,
+    dm21_coefficient_inputs,
+    densities,
+)
 from jax.nn import gelu
 from orbax.checkpoint import PyTreeCheckpointer
 from torch.utils.tensorboard import SummaryWriter
 
-from grad_dft import (
-    train_kernel, 
-    energy_predictor,
-    diff_scf_loop
-)
+from grad_dft import train_kernel, energy_predictor, diff_scf_loop
 
-from jax.config import config
+from jax import config
+
 config.update("jax_enable_x64", True)
-config.update('jax_debug_nans', True)
+config.update("jax_debug_nans", True)
 
 orbax_checkpointer = PyTreeCheckpointer()
 
@@ -83,7 +85,9 @@ def coefficients(instance, rhoinputs, *_, **__):
     instance.sow("intermediates", "tanh", x)
 
     # 6 Residual blocks with 256-features dense layer and layer norm
-    for features, i in zip(layer_widths, range(len(layer_widths))):  # layer_widths = [256]*6
+    for features, i in zip(
+        layer_widths, range(len(layer_widths))
+    ):  # layer_widths = [256]*6
         res = x
         x = instance.dense(features=features)(x)
         instance.sow("intermediates", "residual_dense_" + str(i), x)
@@ -169,7 +173,9 @@ def train_epoch(state, training_files, training_data_dirpath):
 
     load = loader(fname=fpath, randomize=True, training=True, config_omegas=[])
     for _, system in tqdm.tqdm(load):
-        params, opt_state, cost_val, metrics = kernel(params, opt_state, system, system.energy)
+        params, opt_state, cost_val, metrics = kernel(
+            params, opt_state, system, system.energy
+        )
         del system
 
         for k in metrics.keys():
@@ -193,7 +199,9 @@ for epoch in range(1, num_epochs + 1):
 
     # Run an optimization step over a training batch
     state = params, opt_state, cost_val
-    state, metrics, epoch_metrics = train_epoch(state, training_files, training_data_dirpath)
+    state, metrics, epoch_metrics = train_epoch(
+        state, training_files, training_data_dirpath
+    )
     params, opt_state, cost_val = state
 
     # Save metrics and checkpoint
@@ -203,7 +211,9 @@ for epoch in range(1, num_epochs + 1):
     for metric in epoch_metrics.keys():
         writer.add_scalar(f"/{metric}/train", epoch_metrics[metric], epoch)
     writer.flush()
-    functional.save_checkpoints(params, tx, step=epoch, orbax_checkpointer=orbax_checkpointer)
+    functional.save_checkpoints(
+        params, tx, step=epoch, orbax_checkpointer=orbax_checkpointer
+    )
     print(f"-------------\n")
     print(f"\n")
 

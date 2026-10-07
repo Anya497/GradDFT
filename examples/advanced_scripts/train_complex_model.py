@@ -28,7 +28,7 @@ from orbax.checkpoint import PyTreeCheckpointer
 import warnings
 
 from grad_dft import (
-    train_kernel, 
+    train_kernel,
     energy_predictor,
     DispersionFunctional,
     NeuralFunctional,
@@ -39,15 +39,16 @@ from grad_dft import (
     dm21_combine_densities,
     dm21_hfgrads_cinputs,
     dm21_hfgrads_densities,
-    loader
+    loader,
 )
 
 from torch.utils.tensorboard import SummaryWriter
 import jax
 
-from jax.config import config
+from jax import config
+
 config.update("jax_enable_x64", True)
-config.update('jax_debug_nans', True)
+config.update("jax_debug_nans", True)
 warnings.warn("This script takes a long time to run.")
 
 # In this example we explain how to replicate the experiments that train
@@ -70,7 +71,9 @@ width_layers = 512
 squash_offset = 1e-4
 layer_widths = [width_layers] * n_layers
 nlc_layer_widths = [width_layers // 4] * (n_layers // 2)
-out_features = 20  # 2 for each spin x 2 for exchange/correlation x 4 for MGGA + 4 for HF
+out_features = (
+    20  # 2 for each spin x 2 for exchange/correlation x 4 for MGGA + 4 for HF
+)
 sigmoid_scale_factor = 2.0
 activation = gelu
 loadcheckpoint = False
@@ -88,7 +91,9 @@ def nn_coefficients(instance, rhoinputs, *_, **__):
     instance.sow("intermediates", "tanh", x)
 
     # 6 Residual blocks with 256-features dense layer and layer norm
-    for features, i in zip(layer_widths, range(len(layer_widths))):  # layer_widths = [256]*6
+    for features, i in zip(
+        layer_widths, range(len(layer_widths))
+    ):  # layer_widths = [256]*6
         res = x
         x = instance.dense(features=features)(x)
         instance.sow("intermediates", "residual_dense_" + str(i), x)
@@ -172,7 +177,9 @@ functional = NeuralFunctional(
     ),
     combine_densities=combine_densities,
     coefficient_inputs=dm21_coefficient_inputs,
-    nograd_coefficient_inputs=lambda molecule, *_, **__: molecule.HF_energy_density(omegas),
+    nograd_coefficient_inputs=lambda molecule, *_, **__: molecule.HF_energy_density(
+        omegas
+    ),
     coefficient_input_grads=lambda self, params, molecule, nograd_cinputs, grad_cinputs, densities, *_, **__: dm21_hfgrads_cinputs(
         self, params, molecule, nograd_cinputs, grad_cinputs, densities, omegas
     ),
@@ -212,7 +219,10 @@ orbax_checkpointer = PyTreeCheckpointer()
 ckpt_dir = os.path.join(dirpath, "ckpts/", "checkpoint_" + str(checkpoint_step) + "/")
 if loadcheckpoint:
     train_state = functional.load_checkpoint(
-        tx=tx, ckpt_dir=ckpt_dir, step=checkpoint_step, orbax_checkpointer=orbax_checkpointer
+        tx=tx,
+        ckpt_dir=ckpt_dir,
+        step=checkpoint_step,
+        orbax_checkpointer=orbax_checkpointer,
     )
     params = train_state.params
     tx = train_state.tx
@@ -264,7 +274,9 @@ def train_epoch(state, training_files, training_data_dirpath):
 
         load = loader(fname=fpath, randomize=True, training=True, config_omegas=omegas)
         for _, system in tqdm(load, "Molecules/reactions per file"):
-            params, opt_state, cost_val, metrics = kernel(params, opt_state, system, system.energy)
+            params, opt_state, cost_val, metrics = kernel(
+                params, opt_state, system, system.energy
+            )
             del system
 
             # Logging the resulting metrics
@@ -289,7 +301,9 @@ for epoch in range(initepoch, num_epochs + initepoch):
 
     # Run an optimization step over a training batch
     state = params, opt_state, cost_val
-    state, metrics, epoch_metrics = train_epoch(state, training_files, training_data_dirpath)
+    state, metrics, epoch_metrics = train_epoch(
+        state, training_files, training_data_dirpath
+    )
     params, opt_state, cost_val = state
 
     # Save metrics and checkpoint
@@ -299,6 +313,8 @@ for epoch in range(initepoch, num_epochs + initepoch):
     for metric in epoch_metrics.keys():
         writer.add_scalar(f"/{metric}/train", epoch_metrics[metric], epoch)
     writer.flush()
-    functional.save_checkpoints(params, tx, step=epoch, orbax_checkpointer=orbax_checkpointer)
+    functional.save_checkpoints(
+        params, tx, step=epoch, orbax_checkpointer=orbax_checkpointer
+    )
     print(f"-------------\n")
     print(f"\n")

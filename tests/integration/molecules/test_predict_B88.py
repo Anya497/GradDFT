@@ -19,14 +19,11 @@
 import pytest
 
 # This only works on startup!
-from jax.config import config
+from jax import config
+
 config.update("jax_enable_x64", True)
 
-from grad_dft import (
-    molecule_from_pyscf,
-    scf_loop, 
-    diff_scf_loop
-)
+from grad_dft import molecule_from_pyscf, scf_loop, diff_scf_loop
 from grad_dft.utils.types import Hartree2kcalmol
 from grad_dft.popular_functionals import B88
 
@@ -50,6 +47,7 @@ MOL_LI.build()
 
 SCF_ITERS = 10
 
+
 @pytest.mark.parametrize("mol_and_name", [(MOL_WATER, "water"), (MOL_LI, "Li")])
 def test_predict(mol_and_name: tuple[gto.Mole, str]) -> None:
     r"""Compare the total energy predicted by Grad-DFT for the B88 functional versus PySCF.
@@ -63,11 +61,11 @@ def test_predict(mol_and_name: tuple[gto.Mole, str]) -> None:
         mf = dft.RKS(mol)
     else:
         mf = dft.UKS(mol)
-    
+
     mf.xc = "B88"
     mf.max_cycle = 10
     e_DM = mf.kernel()
-    
+
     # Start from Non-SCF density
     molecule = molecule_from_pyscf(mf, energy=e_DM, omegas=[], scf_iteration=0)
 
@@ -75,7 +73,9 @@ def test_predict(mol_and_name: tuple[gto.Mole, str]) -> None:
     molecule_out = iterator(PARAMS, molecule)
     e_XND = molecule_out.energy
     kcalmoldiff = (e_XND - e_DM) * Hartree2kcalmol
-    assert jnp.allclose(kcalmoldiff, 0, atol=1e-6), f"Energy difference with PySCF for B88 on {name} exceeds the threshold."
+    assert jnp.allclose(
+        kcalmoldiff, 0, atol=1e-6
+    ), f"Energy difference with PySCF for B88 on {name} exceeds the threshold."
 
 
 @pytest.mark.parametrize("mol_and_name", [(MOL_WATER, "water"), (MOL_LI, "Li")])
@@ -87,23 +87,27 @@ def test_jit(mol_and_name: tuple[gto.Mole, str]) -> None:
         mol_and_name (tuple[gto.Mole, str]): PySCF molecule object and the name of the molecule.
     """
     mol, name = mol_and_name
-    if mol.spin == 0: mf = dft.RKS(mol)
-    else: mf = dft.UKS(mol)
-    
+    if mol.spin == 0:
+        mf = dft.RKS(mol)
+    else:
+        mf = dft.UKS(mol)
+
     mf.xc = "B88"
     mf.max_cycle = 0
     mf.kernel()
-    
+
     # Start from Non-SCF density
     molecule = molecule_from_pyscf(mf, omegas=[], scf_iteration=0)
 
     iterator = scf_loop(FUNCTIONAL, verbose=2, cycles=10)
     molecule_out = iterator(PARAMS, molecule)
     e_XND = molecule_out.energy
-    
+
     iterator = diff_scf_loop(FUNCTIONAL, cycles=10)
     molecule_out = iterator(PARAMS, molecule)
     e_XND_jit = molecule_out.energy
 
     kcalmoldiff = (e_XND - e_XND_jit) * Hartree2kcalmol
-    assert jnp.allclose(kcalmoldiff, 0, atol=1e-6), f"Energy difference with between jitted and non-jitted SCF for B88 on {name} exceeds the threshold."
+    assert jnp.allclose(
+        kcalmoldiff, 0, atol=1e-6
+    ), f"Energy difference with between jitted and non-jitted SCF for B88 on {name} exceeds the threshold."

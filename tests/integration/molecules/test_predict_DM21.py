@@ -18,7 +18,8 @@ import warnings
 import pytest
 
 # This only works on startup!
-from jax.config import config
+from jax import config
+
 config.update("jax_enable_x64", True)
 
 dirpath = os.path.dirname(os.path.dirname(__file__))
@@ -32,11 +33,7 @@ model_path = os.path.normpath(dirpath + "/DM21_model")
 
 learning_rate = 1e-3
 
-from grad_dft import (
-    molecule_from_pyscf, 
-    scf_loop, 
-    DM21
-)
+from grad_dft import molecule_from_pyscf, scf_loop, DM21
 from grad_dft.utils.types import Hartree2kcalmol
 
 from grad_dft.external import NeuralNumInt
@@ -69,7 +66,9 @@ def test_predict(mol):
     ## Load the molecule, RKS
     warnings.warn("Remember to set the grid level to 3 in the config file!")
 
-    molecule = molecule_from_pyscf(mf, energy=energy, omegas=[0.0, 0.4], scf_iteration=0)
+    molecule = molecule_from_pyscf(
+        mf, energy=energy, omegas=[0.0, 0.4], scf_iteration=0
+    )
 
     # tx = adam(learning_rate = learning_rate)
     # iterator = mol_orb_optimizer(functional, tx, omegas = [0., 0.4], verbose = 2, functional_type = 'DM21')
@@ -206,9 +205,7 @@ def test_uks():
 molecule_name = "CoC"
 mol = gto.Mole()
 mol.atom = [["Co", [0, 0, 0]], ["C", [1.56, 0, 0]]]  # def2-tzvp
-mol.basis = (
-    "def2-tzvp"  # basis_set_exchange.api.get_basis(name='cc-pvdz', fmt='nwchem', elements='Co')
-)
+mol.basis = "def2-tzvp"  # basis_set_exchange.api.get_basis(name='cc-pvdz', fmt='nwchem', elements='Co')
 mol.spin = 1
 mol.unit = "angstrom"
 mol.build()
