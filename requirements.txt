@@ -5,6 +5,7 @@ attrs>=23.1.0
 flax>=0.7.2
 tensorflow>=2.13.0
 tensorflow-hub>=0.16.0
+density_functional_approximation_dm21 @ git+https://github.com/google-deepmind/deepmind-research.git@f5de0ede8430809180254ee957abf36ed62579ef#subdirectory=density_functional_approximation_dm21
 typeguard==2.13.3
 typing_extensions>=4.8.0
 jaxtyping
