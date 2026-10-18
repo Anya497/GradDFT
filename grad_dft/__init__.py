@@ -24,6 +24,7 @@ from .molecule import (
     grad_density,
     coulomb_energy
 )
+from .utils import PackedERI
 from .solid import (
     Solid
 )

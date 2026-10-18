@@ -23,7 +23,17 @@ from .types import (
     DType,
     HartreeFock,
     DensityFunctional,
+    ERITensor,
     default_dtype,
+)
+from .eri import (
+    ERI_STORAGE_FORMATS,
+    PACKED_STORAGE_FORMATS,
+    PackedERI,
+    pair_indices,
+    packed8_to_packed4,
+    packed_to_dense,
+    validate_eri_storage,
 )
 from .tree import tree_size, tree_isfinite, tree_randn_like, tree_func, tree_shape
 from .utils import to_device_arrays, Utils
