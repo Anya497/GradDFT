@@ -16,7 +16,12 @@ from typing import List, Optional, Union, Sequence, Tuple, NamedTuple
 from dataclasses import fields
 
 from typeguard import typechecked
-from grad_dft.utils import vmap_chunked
+from grad_dft.utils import (
+    ERITensor,
+    PackedERI,
+    packed_coulomb_potential,
+    vmap_chunked,
+)
 from functools import partial
 
 from jax import numpy as jnp
@@ -697,7 +702,7 @@ def abs_clip(arr, threshold):
 def nonXC(
     rdm1: Float[Array, "orbitals orbitals"],
     h1e: Float[Array, "orbitals orbitals"],
-    rep_tensor: Float[Array, "orbitals orbitals orbitals orbitals"],
+    rep_tensor: ERITensor,
     nuclear_repulsion: Scalar,
     precision=Precision.HIGHEST,
 ) -> Scalar:
@@ -711,9 +716,11 @@ def nonXC(
     h1e : Float[Array, "orbitals orbitals"]
         The 1-electron Hamiltonian.
         Equivalent to mf.get_hcore(mf.mol) in pyscf.
-    rep_tensor : Float[Array, "orbitals orbitals orbitals orbitals"]
-        The repulsion tensor.
-        Equivalent to mf.mol.intor('int2e') in pyscf.
+    rep_tensor : ERITensor
+        The repulsion tensor: dense ``(orbitals, orbitals, orbitals,
+        orbitals)`` array (equivalent to mf.mol.intor('int2e') in pyscf) or
+        a :class:`~grad_dft.utils.eri.PackedERI` (``s4``/``s8``), contracted
+        without materializing the dense :math:`N^4` tensor when compressed.
     nuclear_repulsion : Scalar
         The nuclear repulsion energy.
         Equivalent to mf.mol.energy_nuc() in pyscf.
@@ -762,7 +769,7 @@ def one_body_energy(
 @partial(jax.jit, static_argnames=["precision"])
 def coulomb_energy(
     rdm1: Float[Array, "orbitals orbitals"],
-    rep_tensor: Float[Array, "orbitals orbitals orbitals orbitals"],
+    rep_tensor: ERITensor,
     precision=Precision.HIGHEST,
 ) -> Scalar:
     r"""A function that computes the Coulomb two-body energy of a DFT functional.
@@ -771,8 +778,11 @@ def coulomb_energy(
     ----------
     rdm1 : Float[Array, "spin orbitals orbitals"]
         The 1-Reduced Density Matrix.
-    rep_tensor : Float[Array, "orbitals orbitals orbitals orbitals"]
-        The repulsion tensor.
+    rep_tensor : ERITensor
+        The repulsion tensor: dense ``(orbitals, orbitals, orbitals,
+        orbitals)`` array or a :class:`~grad_dft.utils.eri.PackedERI`
+        (``s4``/``s8``), contracted without materializing the dense
+        :math:`N^4` tensor when compressed.
 
     Returns
     -------
@@ -787,7 +797,7 @@ def coulomb_energy(
 @partial(jax.jit, static_argnames=["precision"])
 def coulomb_potential(
     rdm1: Float[Array, "orbitals orbitals"],
-    rep_tensor: Float[Array, "orbitals orbitals orbitals orbitals"],
+    rep_tensor: ERITensor,
     precision=Precision.HIGHEST,
 ) -> Float[Array, "orbitals orbitals"]:
     r"""
@@ -798,9 +808,16 @@ def coulomb_potential(
     rdm1 : Float[Array, "spin orbitals orbitals"]
         The 1-Reduced Density Matrix.
         Equivalent to mf.make_rdm1() in pyscf.
-    rep_tensor : Float[Array, "orbitals orbitals orbitals orbitals"]
-        The repulsion tensor.
-        Equivalent to mf.mol.intor('int2e') in pyscf.
+    rep_tensor : ERITensor
+        The repulsion tensor: either the dense
+        ``Float[Array, "orbitals orbitals orbitals orbitals"]``
+        (equivalent to mf.mol.intor('int2e') in pyscf) or a
+        :class:`~grad_dft.utils.eri.PackedERI` holding PySCF
+        symmetry-compressed ``s4``/``s8`` storage. The compressed path
+        contracts the packed storage directly and never materializes the
+        dense :math:`N^4` tensor; it is exact for an arbitrary ``rdm1``
+        (no density symmetry assumed), matching the dense einsum up to
+        floating-point summation order.
     precision : Precision, optional
         The precision to use for the computation, by default Precision.HIGHEST
 
@@ -808,6 +825,8 @@ def coulomb_potential(
     -------
     Float[Array, "spin orbitals orbitals"]
     """
+    if isinstance(rep_tensor, PackedERI):
+        return packed_coulomb_potential(rdm1, rep_tensor, precision)
     return jnp.einsum("pqrt,rt->pq", rep_tensor, rdm1, precision=precision)
 
 @jaxtyped

@@ -49,9 +49,17 @@ rejects with an informative error (see :func:`validate_eri_storage`).
 
 import numpy as np
 
+from jax import lax
 from jax import numpy as jnp
 from flax import struct
-from jaxtyping import Array
+from jaxtyping import Array, Float
+
+#: Maximum number of gathered elements per ``s8`` row-block during packed
+#: Coulomb contraction (see :func:`packed_coulomb_potential`): bounds the
+#: transient index/value block at :math:`2^{20}` elements (~8 MB in float64)
+#: instead of the full virtual ``(M, M)`` matrix. Static — pass a Python int
+#: if overriding under ``jit``.
+PACKED8_BLOCK_ELEMENTS = 2**20
 
 #: Storage formats accepted by the ``eri_storage`` configuration.
 ERI_STORAGE_FORMATS = ("dense", "s4", "s8")
@@ -272,3 +280,135 @@ class PackedERI:
         See :func:`packed_to_dense` for details.
         """
         return packed_to_dense(self)
+
+
+def fold_density_matrix(
+    rdm1: Float[Array, "orbitals orbitals"], index: Array
+) -> Float[Array, "pair"]:
+    r"""Fold a density matrix onto unique index pairs.
+
+    Computes :math:`\tilde D_{\mathrm{pair}(r,t)} = \sum_{(r,t)} D_{rt}`,
+    i.e. ``D̃[pair(r, t)] = D[r, t] + D[t, r]`` for ``r != t`` and
+    ``D̃[pair(r, r)] = D[r, r]``. This segment-fold makes the subsequent
+    packed contraction exact for an **arbitrary** density matrix — no
+    symmetry of ``rdm1`` is assumed anywhere.
+
+    Parameters
+    ----------
+    rdm1 : Float[Array, "orbitals orbitals"]
+        Density matrix (symmetric or not).
+    index : Int[Array, "orbitals orbitals"]
+        Pair-index map from :func:`pair_indices`.
+
+    Returns
+    -------
+    Float[Array, "pair"]
+        Folded vector of length ``M = n (n + 1) / 2``.
+    """
+    n_pairs = index.shape[0] * (index.shape[0] + 1) // 2
+    folded = jnp.zeros((n_pairs,), dtype=rdm1.dtype)
+    return folded.at[index.reshape(-1)].add(rdm1.reshape(-1))
+
+
+def _packed8_matvec(
+    packed8: Array, vector: Array, n_pairs: int, precision, max_block_elements: int
+) -> Array:
+    r"""Contract ``s8`` storage with a folded vector: ``J̃ = e4 @ D̃``.
+
+    Reads the virtual ``(M, M)`` ``s4`` matrix row-block by row-block without
+    ever allocating it: element ``(i, j)`` lives at ``i (i + 1) / 2 + j`` if
+    ``j <= i`` else ``j (j + 1) / 2 + i``. Each scan step gathers at most
+    ``max_block_elements // M`` rows (at least 1, at most ``M``, so small
+    systems degenerate to a single full block, which is optimal there),
+    bounding transient memory instead of the :math:`M^2` matrix.
+
+    Parameters
+    ----------
+    packed8 : Float[Array, "s8"]
+        ``s8``-packed ERI of length ``M (M + 1) / 2``.
+    vector : Float[Array, "pair"]
+        Folded density vector of length ``M``.
+    n_pairs : int
+        Number of unique pairs ``M`` (static).
+    precision : Precision
+        Einsum precision.
+    max_block_elements : int
+        Static cap on gathered elements per scan step (see
+        :data:`PACKED8_BLOCK_ELEMENTS`).
+
+    Returns
+    -------
+    Float[Array, "pair"]
+        Coupled vector ``J̃`` of length ``M``.
+    """
+    pair = jnp.arange(n_pairs)
+    start = pair * (pair + 1) // 2  # row i occupies [start[i], start[i] + i + 1)
+    block_rows = max(1, min(n_pairs, int(max_block_elements) // max(1, n_pairs)))
+    starts = jnp.arange(0, n_pairs, block_rows)
+
+    def block_coupled(i0):
+        rows = jnp.clip(i0 + jnp.arange(block_rows), 0, n_pairs - 1)
+        cols = pair
+        source = jnp.where(
+            cols[None, :] <= rows[:, None],
+            start[rows][:, None] + cols[None, :],
+            start[cols][None, :] + rows[:, None],
+        )
+        return jnp.einsum("ij,j->i", packed8[source], vector, precision=precision)
+
+    # Sequential scan: only one (block_rows, M) block is alive at a time.
+    _, blocks = lax.scan(lambda _, i0: (None, block_coupled(i0)), None, starts)
+    return blocks.reshape(-1)[:n_pairs]
+
+
+def packed_coulomb_potential(
+    rdm1: Float[Array, "orbitals orbitals"],
+    eri: PackedERI,
+    precision=lax.Precision.HIGHEST,
+    max_block_elements: int = PACKED8_BLOCK_ELEMENTS,
+) -> Float[Array, "orbitals orbitals"]:
+    r"""Coulomb potential matrix ``J_pq = Σ_rt (pq|rt) D_rt`` from packed ERIs.
+
+    Exploits the pair packing directly: with :math:`\tilde D` from
+    :func:`fold_density_matrix` the contraction reduces to a matrix-vector
+    product over unique pairs (:math:`\tilde J = E_4 \tilde D`, ``s4``) and a
+    gather ``J[p, q] = J̃[pair(p, q)]``; the ``s8`` variant reads ``E_4``
+    row-block-wise (see :func:`_packed8_matvec`). The dense
+    ``(n, n, n, n)`` tensor is never materialized (and neither is the
+    ``(M, M)`` ``s4`` matrix for large ``s8`` inputs), and the result equals
+    ``jnp.einsum("pqrt,rt->pq", to_dense(eri), rdm1)`` up to floating-point
+    summation order (observed ≤ ~1e-14) for an arbitrary ``rdm1``.
+
+    Parameters
+    ----------
+    rdm1 : Float[Array, "orbitals orbitals"]
+        The 1-Reduced Density Matrix; no symmetry assumed.
+    eri : PackedERI
+        The symmetry-compressed repulsion tensor (``s4`` or ``s8``).
+    precision : Precision, optional
+        Precision for the contractions, by default Precision.HIGHEST.
+    max_block_elements : int, optional
+        Static cap on gathered elements per ``s8`` scan step, by default
+        :data:`PACKED8_BLOCK_ELEMENTS` (mainly a testing/memory-tuning knob;
+        must be a Python int when passed under ``jit``).
+
+    Returns
+    -------
+    Float[Array, "orbitals orbitals"]
+        The Coulomb potential matrix.
+    """
+    index = pair_indices(eri.n_orbitals)
+    folded = fold_density_matrix(rdm1, index)
+    if eri.storage_format == "s4":
+        coupled = jnp.einsum("ij,j->i", eri.packed, folded, precision=precision)
+    elif eri.storage_format == "s8":
+        n_pairs = eri.n_orbitals * (eri.n_orbitals + 1) // 2
+        coupled = _packed8_matvec(
+            eri.packed, folded, n_pairs, precision, max_block_elements
+        )
+    else:  # unreachable through the constructor; defensive against crafted treedefs
+        raise ValueError(
+            f"Unknown PackedERI storage_format {eri.storage_format!r}; "
+            f"expected one of {list(PACKED_STORAGE_FORMATS)}."
+        )
+    return coupled[index]

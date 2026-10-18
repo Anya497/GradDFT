@@ -30,8 +30,10 @@ from .eri import (
     ERI_STORAGE_FORMATS,
     PACKED_STORAGE_FORMATS,
     PackedERI,
+    fold_density_matrix,
     pair_indices,
     packed8_to_packed4,
+    packed_coulomb_potential,
     packed_to_dense,
     validate_eri_storage,
 )
