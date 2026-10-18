@@ -37,15 +37,20 @@ from pyscf.ao2mo import restore
 # from qdft.reaction import Reaction, make_reaction, get_grad
 from grad_dft.molecule import Grid, Molecule, Reaction, make_reaction
 from grad_dft.solid import Solid, KPointInfo
-from grad_dft.utils import DType, default_dtype, DensityFunctional, HartreeFock
+from grad_dft.utils import (
+    DType,
+    default_dtype,
+    DensityFunctional,
+    HartreeFock,
+    PackedERI,
+    validate_eri_storage,
+)
 from jax.tree_util import tree_map
 from grad_dft.external import NeuralNumInt
 from grad_dft.external import Functional as ExternalFunctional
 
-from pyscf.pbc import df
-
 import h5py
-from pyscf import cc, dft, scf
+from pyscf import cc, dft, df, scf
 
 from jaxtyping import Array, Scalar, Int, Bool
 from grad_dft.external import _nu_chunk
@@ -111,12 +116,54 @@ def molecule_from_pyscf(
     scf_iteration: Scalar = jnp.int32(50),
     chunk_size: Optional[Scalar] = jnp.int32(1024),
     grad_order: Optional[Scalar] = jnp.int32(2),
-) -> Molecule: 
+    eri_storage: str = "dense",
+) -> Molecule:
+    r"""Convert a converged PySCF mean field object into a Molecule.
+
+    Parameters
+    ----------
+    mf : DensityFunctional
+        PySCF mean field object (kernel already run).
+    dtype : DType, optional
+        Target floating point dtype.
+    omegas : Array, optional
+        Range-separation parameters; triggers chi-tensor generation.
+    energy : Scalar, optional
+        Energy stored on the molecule.
+    name : Array, optional
+        Molecule name (encoded as integers).
+    scf_iteration : Scalar, optional
+        Number of SCF iterations performed.
+    chunk_size : Scalar, optional
+        Chunk size for chi-tensor generation.
+    grad_order : Scalar, optional
+        Highest derivative order of the atomic orbitals.
+    eri_storage : str, optional
+        ERI storage format for ``rep_tensor``: "dense" (default, current
+        behavior), "s4" or "s8" (symmetry-compressed PySCF storage wrapped
+        in a ``PackedERI``). Isolated molecules only; periodic systems
+        raise ValueError (validated here before any integrals run, and
+        again in :func:`calc_eri_with_pyscf` as defense in depth).
+
+    Returns
+    -------
+    Molecule
+    """
+    # Fail fast on unsupported ERI storage before any SCF or integral work.
+    eri_storage = validate_eri_storage(eri_storage)
+    if hasattr(mf, "cell") and eri_storage != "dense":
+        raise ValueError(
+            f"eri_storage={eri_storage!r} is only supported for isolated "
+            "molecules; periodic systems keep eri_storage='dense' "
+            "(use molecule_from_pyscf without compression)."
+        )
     if hasattr(mf, "kpts"):
         if not np.array_equal(mf.kpts, np.array([[0.0, 0.0, 0.0]])):
              raise RuntimeError("Input was periodic with BZ sampling beyond gamma-point only. Use solid_from_pyscf instead.")
     grid = grid_from_pyscf(mf.grids, dtype=dtype)
-    outputs = _package_outputs(mf, mf.grids, scf_iteration, grad_order)
+    outputs = _package_outputs(
+        mf, mf.grids, scf_iteration, grad_order, eri_storage=eri_storage
+    )
     (
         ao,
         grad_ao,
@@ -640,7 +687,12 @@ def to_device_arrays(*arrays, dtype: Optional[DType] = None):
 
     out = []
     for array in arrays:
-        if isinstance(array, dict):
+        if isinstance(array, PackedERI):
+            # Dense arrays below ignore `dtype`; the packed leaf honors it
+            # (a single cheap conversion, no N^4 materialization). With the
+            # default `dtype=None` this matches the dense behavior.
+            out.append(array.replace(packed=jnp.asarray(array.packed, dtype=dtype)))
+        elif isinstance(array, dict):
             for k, v in array.items():
                 array[k] = jnp.asarray(v)
             out.append(array)
@@ -741,7 +793,25 @@ def pbc_ao_grads(cell: Cell, coords: Array, order=2, kpts=None) -> Dict:
             i += 1
     return result
 
-def calc_eri_with_pyscf(mf, kpts=np.zeros(3)) -> np.ndarray:
+def _packed_exact_eri_from_mol(mol, eri_storage: str) -> PackedERI:
+    r"""Exact molecular integrals in compressed storage (no density fitting)."""
+    return PackedERI(
+        np.asarray(mol.intor("int2e", aosym=eri_storage)), eri_storage, mol.nao_nr()
+    )
+
+
+def _packed_df_eri(eri_compressed, eri_storage: str, n_ao: int) -> PackedERI:
+    r"""Wrap density-fitted molecular ERIs in compressed storage.
+
+    PySCF's molecular ``DF.get_eri()`` has no ``aosym`` argument and always
+    returns s8 storage; the s4 format re-packs it with ``restore(4, ·)``.
+    """
+    if eri_storage == "s4":
+        eri_compressed = restore(4, eri_compressed, n_ao)
+    return PackedERI(np.asarray(eri_compressed), eri_storage, n_ao)
+
+
+def calc_eri_with_pyscf(mf, kpts=np.zeros(3), eri_storage: str = "dense"):
     r"""Calculate the ERIs using the method detected from the PySCF mean field object.
     
     Inputs
@@ -751,16 +821,36 @@ def calc_eri_with_pyscf(mf, kpts=np.zeros(3)) -> np.ndarray:
         PySCF mean field object
     kpts:
         Array of k-points (absolute, not fractional).
+    eri_storage:
+        ERI storage format: "dense" (default, current behavior), "s4" or
+        "s8" (PySCF symmetry-compressed storage wrapped in a
+        :class:`~grad_dft.utils.eri.PackedERI`). Only supported for isolated
+        molecules; periodic systems (including gamma-point-only) keep
+        "dense" and raise ValueError otherwise, since GradDFT assumes no
+        ERI symmetry for periodic integrals. With density fitting, the
+        packed formats are taken from the density fitter's ``get_eri()``
+        (always s8 storage), never from exact integrals.
 
     Outputs
     ----------
-    np.ndarray
+    np.ndarray or PackedERI
     
     The ERIs. Output shape is (nao, nao, nao, nao) for isolated molecules and gamma-point only
     periodic calculations. For full BZ calculations, the output shape is (nkpt, nkpt, nao, nao, nao, nao).
+    With eri_storage="s4"/"s8" (isolated molecules only) a PackedERI wrapping
+    the compressed storage of the same integrals.
     """
+    # Validate before any integral work so bad configuration fails fast.
+    eri_storage = validate_eri_storage(eri_storage)
+
     # Solid or Isolated molecule?
     if hasattr(mf, "cell"): # Periodic system
+        if eri_storage != "dense":
+            raise ValueError(
+                "Periodic systems must keep eri_storage='dense': GradDFT "
+                "assumes no ERI symmetry for periodic integrals (complex "
+                f"k-point phases, density fitting), got {eri_storage!r}."
+            )
         
         # Check for the three density fitting methods. DF is always used for periodic calculations
         if isinstance(mf.with_df, FFTDF):
@@ -792,11 +882,17 @@ def calc_eri_with_pyscf(mf, kpts=np.zeros(3)) -> np.ndarray:
         try:
             _ = mf.with_df
         except(AttributeError):
+            if eri_storage != "dense":
+                return _packed_exact_eri_from_mol(mf.mol, eri_storage)
             eri =  mf.mol.intor("int2e")
             return eri
         # Use default DF method when DF is used on molecules
+        # (`df` is pyscf.df, the molecular module — NOT pyscf.pbc.df, whose
+        # DF class requires a periodic Cell).
         density_fitter = df.DF(mf.mol)
         eri_compressed = density_fitter.get_eri()
+        if eri_storage != "dense":
+            return _packed_df_eri(eri_compressed, eri_storage, mf.mol.nao_nr())
         eri = restore(1, eri_compressed, mf.mol.nao_nr())
     return eri
         
@@ -808,7 +904,31 @@ def _package_outputs(
     grids: Optional[Grids] = None,
     scf_iteration: Scalar = jnp.int32(50),
     grad_order: Scalar = jnp.int32(2),
-):    
+    eri_storage: str = "dense",
+):
+    r"""Package a converged PySCF mean field object into GradDFT arrays.
+
+    Parameters
+    ----------
+    mf : DensityFunctional
+        PySCF mean field object (kernel already run).
+    grids : Grids, optional
+        PySCF grids; taken from ``mf.grids`` downstream.
+    scf_iteration : Scalar, optional
+        Number of SCF iterations performed.
+    grad_order : Scalar, optional
+        Highest derivative order of the atomic orbitals.
+    eri_storage : str, optional
+        ERI storage format forwarded to
+        :func:`calc_eri_with_pyscf` ("dense", "s4" or "s8"); the returned
+        ``rep_tensor`` is then a ``PackedERI`` instead of a dense array.
+
+    Returns
+    -------
+    Tuple
+        (ao, grad_ao, grad_n_ao, rdm1, energy_nuc, h1e, vj, mo_coeff,
+        mo_energy, mo_occ, mf_e_tot, s1e, fock, rep_tensor, kpt_info).
+    """
     if scf_iteration != 0:
         rdm1 = mf.make_rdm1(mf.mo_coeff, mf.mo_occ)
     else:
@@ -839,7 +959,7 @@ def _package_outputs(
         )  # The 2 is to compensate for the /2 in the definition of the density matrix
         dm = mf.make_rdm1(mf.mo_coeff, mf.mo_occ)
         fock = np.stack([h1e, h1e], axis=0) + mf.get_veff(mf.mol, dm)
-        rep_tensor = calc_eri_with_pyscf(mf)
+        rep_tensor = calc_eri_with_pyscf(mf, eri_storage=eri_storage)
         kpt_info = None
         
     # Unrestricted (spin polarized), open boundary conditions
@@ -858,7 +978,7 @@ def _package_outputs(
         )  # The 2 is to compensate for the /2 in the definition of the density matrix
         dm = mf.make_rdm1(mf.mo_coeff, mf.mo_occ)
         fock = np.stack([h1e, h1e], axis=0) + mf.get_veff(mf.mol, dm)
-        rep_tensor = calc_eri_with_pyscf(mf)
+        rep_tensor = calc_eri_with_pyscf(mf, eri_storage=eri_storage)
         kpt_info = None
      
     # Restricted (non-spin polarized), periodic boundary conditions, full BZ sampling  
@@ -890,7 +1010,7 @@ def _package_outputs(
         
         kpt_info = kpt_info_from_pyscf(mf)
         # Compute ERIs for all pairs of k-points. Needed for Coulomb energy calculation
-        rep_tensor = calc_eri_with_pyscf(mf, kpts=mf.kpts)
+        rep_tensor = calc_eri_with_pyscf(mf, kpts=mf.kpts, eri_storage=eri_storage)
         
     # Unrestricted (spin polarized), periodic boundary conditions, full BZ sampling     
     elif rdm1.ndim == 4 and hasattr(mf, "cell") and rdm1.shape[1] != 1:
@@ -916,7 +1036,7 @@ def _package_outputs(
         
         kpt_info = kpt_info_from_pyscf(mf)
         # Compute ERIs for all pairs of k-points. Needed for Coulomb energy calculation
-        rep_tensor = calc_eri_with_pyscf(mf, kpts=mf.kpts)
+        rep_tensor = calc_eri_with_pyscf(mf, kpts=mf.kpts, eri_storage=eri_storage)
     
     # Restricted (non-spin polarized), periodic boundary conditions, gamma point only
     elif rdm1.ndim == 3 and hasattr(mf, "cell") and rdm1.shape[0] == 1:
@@ -960,7 +1080,7 @@ def _package_outputs(
         fock = np.squeeze(fock, axis=1)
         vj = np.squeeze(vj, axis=1)
         h1e = np.squeeze(h1e, axis=0)
-        rep_tensor = calc_eri_with_pyscf(mf)
+        rep_tensor = calc_eri_with_pyscf(mf, eri_storage=eri_storage)
         kpt_info = None
         
     # Unrestricted (spin polarized), periodic boundary conditions, gamma point only    
@@ -999,7 +1119,7 @@ def _package_outputs(
         fock = np.squeeze(fock, axis=1)
         vj = np.squeeze(vj, axis=1)
         h1e = np.squeeze(h1e, axis=0)
-        rep_tensor = calc_eri_with_pyscf(mf)
+        rep_tensor = calc_eri_with_pyscf(mf, eri_storage=eri_storage)
         kpt_info = None
         
     else:
