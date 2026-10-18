@@ -419,6 +419,11 @@ def saver(
             |- All the attributes in Molecule class
             |- chi (attributes: omegas)
 
+    ERIs in compressed storage (a PackedERI, eri_storage="s4"/"s8") are saved
+    as the packed array with ``storage_format``/``n_orbitals`` as *dataset*
+    attributes; dense molecules are saved exactly as before (no attributes),
+    so existing HDF5 files keep loading unchanged.
+
 
     Raises:
     -------
@@ -501,6 +506,13 @@ def loader(
     molecule/reaction : Molecule or Reaction
         The molecule or reaction object.
 
+    Notes
+    -----
+    Compressed ERIs written by :func:`saver` (dataset attributes
+    ``storage_format``/``n_orbitals``) are reconstructed as ``PackedERI``;
+    dense datasets, including all files written before compressed storage
+    existed, load unchanged.
+
     todo: randomize input
     """
 
@@ -540,6 +552,8 @@ def loader(
                             args[key] = jnp.stack(
                                 [jnp.asarray(value, dtype = jnp.float64)[:, i] for i in indices], axis=1
                             )
+                    elif key == "rep_tensor":
+                        args[key] = _load_rep_tensor(value, dtype=jnp.float64)
                     else:
                         args[key] = jnp.asarray(value, dtype=jnp.float64)
 
@@ -600,6 +614,8 @@ def loader(
                                 args[key] = jnp.stack(
                                     [jnp.asarray(value)[:, i] for i in indices], axis=1
                                 )
+                        elif key == "rep_tensor":
+                            args[key] = _load_rep_tensor(value)
                         else:
                             args[key] = jnp.asarray(value)
 
@@ -627,7 +643,14 @@ def loader(
 
 
 def save_molecule_data(mol_group: h5py.Group, molecule: Molecule):
-    r"""Auxiliary function to save all data except for chi"""
+    r"""Auxiliary function to save all data except for chi
+
+    ``rep_tensor`` in compressed storage (a ``PackedERI``, from
+    ``eri_storage="s4"/"s8"``) is saved as the packed array with its
+    ``storage_format``/``n_orbitals`` as *dataset* attributes; dense
+    molecules are saved exactly as before (no attributes), so existing
+    HDF5 files keep loading unchanged.
+    """
 
     to_numpy = (
         lambda arr: arr if (isinstance(arr, str) or isinstance(arr, float)) else np.asarray(arr)
@@ -643,8 +666,31 @@ def save_molecule_data(mol_group: h5py.Group, molecule: Molecule):
             d = mol_group.create_group(name)
             for k, v in data.items():
                 d.create_dataset(f"{k}", data=v)
+        elif isinstance(data, PackedERI):
+            dataset = mol_group.create_dataset(name, data=np.asarray(data.packed))
+            dataset.attrs["storage_format"] = data.storage_format
+            dataset.attrs["n_orbitals"] = data.n_orbitals
         else:
             mol_group.create_dataset(name, data=data)
+
+
+def _load_rep_tensor(dataset: h5py.Dataset, dtype: Optional[DType] = None):
+    r"""Load a saved ERI tensor, packed or dense.
+
+    Compressed storage is identified by the ``storage_format`` dataset
+    attribute written by :func:`save_molecule_data` — never by the array's
+    shape; any other value indicates a corrupt file. Old dense files carry
+    no attributes and load exactly as before.
+    """
+    storage_format = str(dataset.attrs.get("storage_format", "dense"))
+    validate_eri_storage(storage_format)
+    if storage_format == "dense":
+        return jnp.asarray(dataset, dtype=dtype)
+    return PackedERI(
+        jnp.asarray(dataset, dtype=dtype),
+        storage_format,
+        int(dataset.attrs["n_orbitals"]),
+    )
 
 
 def save_molecule_chi(
