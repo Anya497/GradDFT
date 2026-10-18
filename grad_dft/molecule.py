@@ -76,7 +76,12 @@ class Grid:
 
 @struct.dataclass
 class Molecule:
-    r""" Base class for storing molecule properties and methods."""
+    r""" Base class for storing molecule properties and methods.
+
+    ``rep_tensor`` accepts either a dense ``(n, n, n, n)`` array or a
+    :class:`~grad_dft.utils.eri.PackedERI` with symmetry-compressed ERIs
+    (``eri_storage="s4"``/``"s8"``); contractions dispatch on the type.
+    """
 
     grid: Grid
     atom_index: Int[Array, "atom"]
@@ -95,7 +100,7 @@ class Molecule:
     s1e: Optional[Float[Array, "orbitals orbitals"]] = None  # Not used during training
     omegas: Optional[Float[Array, "omega"]] = None
     chi: Optional[Float[Array, "grid omega spin orbitals"]] = None
-    rep_tensor: Optional[Float[Array, "orbitals orbitals orbitals orbitals"]] = None
+    rep_tensor: Optional[ERITensor] = None
     energy: Optional[Scalar] = None
     basis: Optional[Int[Array, '...']] = None # The name is saved as a list of integers, JAX does not accept str
     name: Optional[Int[Array, '...']] = None # The name is saved as a list of integers, JAX does not accept str
@@ -112,6 +117,9 @@ class Molecule:
     
     def get_coulomb_potential(self, *args, **kwargs) -> Float[Array, "orbitals orbitals"]:
         r"""Compute the Coulomb potential matrix.
+
+        ``rep_tensor`` may be a dense ``(n, n, n, n)`` array or a
+        :class:`~grad_dft.utils.eri.PackedERI` (compressed storage).
 
         Returns
         -------
@@ -301,7 +309,11 @@ class Molecule:
         )
 
     def nonXC(self, *args, **kwargs) -> Scalar:
-        r""" Computes the non-XC energy of a DFT functional."""
+        r""" Computes the non-XC energy of a DFT functional.
+
+        ``rep_tensor`` may be a dense ``(n, n, n, n)`` array or a
+        :class:`~grad_dft.utils.eri.PackedERI` (compressed storage).
+        """
         return nonXC(self.rdm1.sum(axis = 0), self.h1e, self.rep_tensor, self.nuclear_repulsion, *args, **kwargs)
 
     def make_rdm1(self) -> Array:

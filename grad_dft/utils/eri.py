@@ -412,3 +412,47 @@ def packed_coulomb_potential(
             f"expected one of {list(PACKED_STORAGE_FORMATS)}."
         )
     return coupled[index]
+
+
+def eri_allclose(a, b, rtol: float = 1e-14, atol: float = 1e-14) -> bool:
+    r"""Compare ERI representations for numerical equivalence.
+
+    Both arguments are either ``None``, a dense ``(n, n, n, n)`` array or a
+    :class:`PackedERI`. Semantics: ``None`` equals only ``None``; mixed
+    ``None``/non-``None`` returns ``False``. Same-format packed comparisons
+    (same ``storage_format`` and ``n_orbitals``) run directly on the packed
+    storage; every other combination (packed vs dense, different packed
+    formats) materializes both sides with :func:`packed_to_dense` first — an
+    explicit :math:`N^4` boundary that is never on the training path.
+
+    Parameters
+    ----------
+    a, b : None or Array or PackedERI
+        ERI representations to compare.
+    rtol, atol : float, optional
+        Relative/absolute tolerances passed to ``jnp.allclose``.
+
+    Returns
+    -------
+    bool
+        ``True`` if numerically equal within tolerance.
+    """
+    if a is None and b is None:
+        return True
+    if (a is None) != (b is None):
+        return False
+    if isinstance(a, PackedERI) and isinstance(b, PackedERI):
+        if a.storage_format != b.storage_format or a.n_orbitals != b.n_orbitals:
+            # Mixed packed formats — compare via dense to avoid shape errors.
+            return bool(
+                jnp.allclose(
+                    packed_to_dense(a), packed_to_dense(b), rtol=rtol, atol=atol
+                )
+            )
+        return bool(jnp.allclose(a.packed, b.packed, rtol=rtol, atol=atol))
+    if isinstance(a, PackedERI) or isinstance(b, PackedERI):
+        # Mixed with dense or different packed formats: materialize both via dense
+        a_dense = packed_to_dense(a) if isinstance(a, PackedERI) else jnp.asarray(a)
+        b_dense = packed_to_dense(b) if isinstance(b, PackedERI) else jnp.asarray(b)
+        return bool(jnp.allclose(a_dense, b_dense, rtol=rtol, atol=atol))
+    return bool(jnp.allclose(jnp.asarray(a), jnp.asarray(b), rtol=rtol, atol=atol))
