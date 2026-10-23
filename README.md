@@ -110,6 +110,60 @@ mf.kernel()
 molecule = molecule_from_pyscf(mf)
 ```
 
+### Compressed ERI storage (opt-in)
+
+By default `molecule_from_pyscf` stores the electron-repulsion integrals (ERIs)
+as a dense `(n, n, n, n)` tensor, which dominates a `Molecule`'s memory for
+larger basis sets. Pass `eri_storage` to keep PySCF's symmetry-compressed form
+instead:
+
+```python
+molecule = molecule_from_pyscf(mf, eri_storage="s8")  # "s4", or omit for "dense"
+```
+
+| `eri_storage` | stored shape | payload | comment |
+| --- | --- | --- | --- |
+| `"dense"` (default) | `(n, n, n, n)` | `n⁴` | current behaviour, unchanged |
+| `"s4"` | `(M, M)` | `≈ n⁴/4` | `M = n (n + 1) / 2` |
+| `"s8"` | `(T,)` | `≈ n⁴/8` | `T = M (M + 1) / 2` |
+
+The format is explicit metadata on the returned `PackedERI` (never inferred
+from the array shape) and the storage dtype is preserved. `save_molecule_data`
+writes the format alongside the ERIs (as dataset attributes), and datasets
+saved before this feature (dense, no metadata) load unchanged.
+
+These operations use the compressed form directly, without ever materializing
+an `n⁴` buffer:
+
+* building the Coulomb (J) potential and the Coulomb energy, i.e. `Molecule.nonXC()`, `Functional.energy`, Harris-functional training and all training losses;
+* `jax.jit` and `jax.grad` through those paths.
+
+An `n⁴` buffer is materialized only explicitly, off the training path:
+
+* `from grad_dft.utils import packed_to_dense; packed_to_dense(molecule.rep_tensor)`;
+* comparing two molecules whose ERIs are stored in different formats.
+
+Unsupported cases raise an informative `ValueError`:
+
+* periodic/PBC mean-field objects (including Gamma point) and complex ERI dtypes — use dense storage for those;
+* `"s2ij"`/`"s2kl"` packings and numeric aliases.
+
+Measured on CPU in float64 with `examples/advanced_scripts/benchmark_eri_storage.py`
+(see that directory's readme to reproduce):
+
+| molecule | basis | dense | s4 | s8 |
+| --- | --- | --- | --- | --- |
+| H<sub>2</sub>O (n = 24) | cc-pvdz | 2.53 MiB | 0.69 MiB | 0.34 MiB |
+| C<sub>6</sub>H<sub>6</sub> (n = 36) | sto-3g | 12.81 MiB | 3.38 MiB | 1.69 MiB |
+
+Only the storage payload shrinks: the steady-state Coulomb contraction is
+within a small factor of the dense `einsum` (s8 ≈ 2.6x on C<sub>6</sub>H<sub>6</sub>,
+at sub-millisecond absolute times) and one training step (loss plus parameter
+gradients) stays comparable, so no speedup is claimed.
+
+Limitations and next steps: periodic compressed formats, `"s2ij"`/`"s2kl"`
+packings and GPU measurements are not implemented yet.
+
 ### Creating a neural functional
 
 A more complex, neural functional can be created as

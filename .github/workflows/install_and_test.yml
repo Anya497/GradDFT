@@ -46,6 +46,11 @@ jobs:
             pytest -v tests/unit/test_kinetic_density_eq.py
             pytest -v tests/unit/test_eigenproblem.py
             pytest -v tests/unit/test_loss.py
+            pytest -v tests/unit/test_eri_storage.py
+            pytest -v tests/unit/test_eri_contraction.py
+            pytest -v tests/unit/test_eri_generation.py
+            pytest -v tests/unit/test_eri_serialization.py
+            pytest -v tests/unit/test_eri_consumers.py
       - name: Run integration tests
         run: |
           pytest -v tests/integration/molecules/test_non_xc_energy.py
@@ -53,6 +58,7 @@ jobs:
           pytest -v tests/integration/molecules/test_Harris.py
           pytest -v tests/integration/molecules/test_predict_B88.py
           pytest -v tests/integration/molecules/test_training.py
+          pytest -v tests/integration/molecules/test_eri_storage.py
           pytest -v tests/integration/solids/test_training.py
           pytest -v tests/integration/solids/test_non_xc_energy.py
           pytest -v tests/integration/solids/test_functional_implementations.py

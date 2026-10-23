@@ -24,7 +24,8 @@ from grad_dft import (
     density,
     grad_density,
     abs_clip,
-    energy_predictor
+    energy_predictor,
+    eri_allclose,
 )
 from grad_dft.interface.pyscf import (
     generate_chi_tensor,
@@ -995,7 +996,7 @@ def xc1(
         raise ValueError("The two molecules must have the same omegas")
 
     rep_tensor = molecule1.rep_tensor
-    if not jnp.isclose(molecule1.rep_tensor, molecule2.rep_tensor).all():
+    if not eri_allclose(molecule1.rep_tensor, molecule2.rep_tensor):
         raise ValueError("The two molecules must have the same rep_tensor")
     energy = jnp.empty((0))
     basis = molecule1.basis

@@ -12,14 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Union
+"""Common type aliases used across GradDFT."""
+from typing import TYPE_CHECKING, Union
 import jax
 from jax import numpy as jnp
 
 from flax import linen as nn
-import chex, optax
-import pyscf.dft as dft
-import pyscf.scf as scf
+import chex
+import optax
+from pyscf import dft
+from pyscf import scf
+from jaxtyping import Array as JaxtypingArray, Float
 
 Ansatz = nn.Module
 Key = chex.PRNGKey
@@ -32,10 +35,23 @@ HartreeFock = Union[scf.uhf.UHF, scf.rhf.RHF, scf.rohf.ROHF, scf.ghf.GHF, scf.dh
 DensityFunctional = Union[dft.uks.UKS, dft.rks.RKS, dft.roks.ROKS]
 Optimizer = optax.GradientTransformation
 
-Hartree2kcalmol = 627.50947  # http://www.u.arizona.edu/~stefanb/linkpages/conversions.html
+if TYPE_CHECKING:
+    from .eri import PackedERI  # noqa: E402
+
+#: Type accepted by functions consuming electron-repulsion integrals: a dense
+#: ``(orbitals, orbitals, orbitals, orbitals)`` tensor (the default) or
+#: symmetry-compressed storage (see :mod:`grad_dft.utils.eri`).
+ERITensor = Union[
+    Float[JaxtypingArray, "orbitals orbitals orbitals orbitals"], "PackedERI"
+]
+
+Hartree2kcalmol = (
+    627.50947  # http://www.u.arizona.edu/~stefanb/linkpages/conversions.html
+)
 Picometers2Angstroms = 0.01
 Bohr2Angstroms = 0.52917721092
 
 
 def default_dtype() -> DType:
+    r"""Return the default floating-point dtype for GradDFT computations."""
     return jnp.float64 if jax.config.x64_enabled else jnp.float32
